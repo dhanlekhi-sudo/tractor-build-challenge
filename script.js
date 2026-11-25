@@ -5,7 +5,7 @@
 
 /* ---------------- connector routing ---------------- */
 
-const DIAGRAM = document.getElementById('diagram');
+const DIAGRAM = document.getElementById('diagram-grid');
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const connectorsSvg = document.getElementById('connectors');
 
@@ -57,6 +57,21 @@ function drawConnectors() {
 window.addEventListener('load', drawConnectors);
 window.addEventListener('resize', () => requestAnimationFrame(drawConnectors));
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawConnectors);
+
+// The one-shot events above can still fire before the grid's own layout
+// (column stretch height, font-swap reflow) has fully settled, leaving the
+// lines pointing at stale positions. A ResizeObserver on the grid itself
+// catches any later size change — from either source — and redraws.
+if (window.ResizeObserver) {
+  let pending = false;
+  const ro = new ResizeObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { drawConnectors(); pending = false; });
+  });
+  ro.observe(DIAGRAM);
+  DIAGRAM.querySelectorAll('.col').forEach(col => ro.observe(col));
+}
 
 /* ---------------- panel content ---------------- */
 
@@ -436,7 +451,7 @@ function closePanel() {
   document.body.style.overflow = '';
 }
 
-document.getElementById('diagram').addEventListener('click', (e) => {
+DIAGRAM.addEventListener('click', (e) => {
   const node = e.target.closest('[data-panel]');
   if (!node) return;
   openPanel(node.dataset.panel, e);
