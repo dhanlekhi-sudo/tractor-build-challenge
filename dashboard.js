@@ -198,7 +198,7 @@ function drawRankList(containerId, rows) {
   requestAnimationFrame(() => { el.querySelectorAll('.rank-fill').forEach(f => { f.style.width = f.dataset.pct + '%'; }); });
 }
 
-function statTile({ id, tourId, label, value, sub, deltaPct, isPct, spark, noDelta, flagged, countTo, countFormat }) {
+function statTile({ id, tourId, label, value, sub, deltaPct, isPct, spark, noDelta, flagged, countTo, countFormat, dot }) {
   const dir = deltaPct > 0.4 ? 'up' : deltaPct < -0.4 ? 'down' : 'flat';
   const deltaHTML = noDelta
     ? (sub ? `<div class="delta flat">${sub}</div>` : '')
@@ -206,7 +206,9 @@ function statTile({ id, tourId, label, value, sub, deltaPct, isPct, spark, noDel
   const sparkHTML = spark ? `<svg class="spark" data-spark='${JSON.stringify(spark)}'></svg>` : '';
   const countAttrs = countTo != null ? `data-count-to="${countTo}" data-count-format="${countFormat || 'int'}"` : '';
   const displayValue = countTo != null ? formatCount(0, countFormat) : value;
+  const dotHTML = dot ? '<span class="flag-dot--metric" title="This is the metric behind this store\'s flag"></span>' : '';
   return `<div class="kpi-tile" data-kpi="${id}" tabindex="0" role="button" ${tourId ? `data-tour="${tourId}"` : ''} style="${flagged ? 'border-color:var(--magenta-600)' : ''}">
+    ${dotHTML}
     <div class="label">${label}</div>
     <div class="value" ${countAttrs} style="${flagged ? 'color:var(--magenta-600)' : ''}">${displayValue}</div>
     ${deltaHTML}
@@ -438,21 +440,54 @@ function drillStoreList() {
   };
 }
 
+function channelMixFromOrders(orders) {
+  const names = { doordash: 'DoorDash', ubereats: 'Uber Eats', instore: 'In-store', website: 'Website / app' };
+  const sourceToKey = { 'DoorDash': 'doordash', 'Uber Eats': 'ubereats', 'In-store': 'instore', 'Website': 'website' };
+  const counts = { doordash: 0, ubereats: 0, instore: 0, website: 0 };
+  orders.forEach(o => { const k = sourceToKey[o.source]; if (k) counts[k]++; });
+  const total = orders.length || 1;
+  return Object.keys(counts)
+    .map(key => ({ key, name: names[key], value: counts[key], pct: (counts[key] / total) * 100 }))
+    .sort((a, b) => b.value - a.value);
+}
+
 function drillChannelMix() {
   const monthsAgg = aggregateMonths(STORES);
   const latest = monthsAgg[monthsAgg.length - 1];
   const mix = channelMix(latest);
-  const html = `<div class="rank-list">${mix.map((c, i) => rankRowHTML({
+
+  const allOrders = allOrdersWithStore();
+  const today = allOrders.reduce((max, o) => (o.date > max ? o.date : max), allOrders[0].date);
+  const todayOrders = allOrders.filter(o => o.date === today);
+  const todayMix = channelMixFromOrders(todayOrders);
+
+  const monthRankList = mix.map((c, i) => rankRowHTML({
     rank: i + 1, name: c.name, value: `${c.pct.toFixed(0)}% · ${c.value.toLocaleString()}`, pct: c.pct,
     color: channelColor(c.key), drill: 'channel-detail', drillId: c.key,
-  })).join('')}</div>
-  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a channel to see it broken down by store.</p>
-  <div class="section-label section-label--tech">Mix over time</div>
-  ${channelLegendHTML()}
-  <div class="chart-wrap"><svg class="linechart" id="drill-channel-stack-chart"></svg><div class="chart-tooltip" id="drill-channel-stack-tooltip"></div></div>
-  ${sourceOrdersHTML(allOrdersWithStore())}`;
+  })).join('');
+  const todayRankList = todayMix.map((c, i) => rankRowHTML({
+    rank: i + 1, name: c.name, value: `${c.pct.toFixed(0)}% · ${c.value.toLocaleString()}`, pct: c.pct, color: channelColor(c.key),
+  })).join('');
+
+  const html = `
+  <div class="dash-tabs" style="margin-bottom:20px;">
+    <button class="dash-tab active" data-mix-tab="month">This month — ${latest.label}</button>
+    <button class="dash-tab" data-mix-tab="today">Current — ${formatDateLabel(today)}</button>
+  </div>
+  <div data-mix-view="month">
+    <div class="rank-list">${monthRankList}</div>
+    <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a channel to see it broken down by store.</p>
+    <div class="section-label section-label--tech">Mix over time</div>
+    ${channelLegendHTML()}
+    <div class="chart-wrap"><svg class="linechart" id="drill-channel-stack-chart"></svg><div class="chart-tooltip" id="drill-channel-stack-tooltip"></div></div>
+  </div>
+  <div data-mix-view="today" hidden>
+    <div class="rank-list">${todayRankList}</div>
+    <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">${todayOrders.length.toLocaleString()} orders across all stores today — live, not a monthly average.</p>
+  </div>
+  ${sourceOrdersHTML(allOrders)}`;
   return {
-    title: `Channel mix, ${latest.label}`, html,
+    title: `Channel mix`, html,
     afterRender: () => drawStackedBarChart('drill-channel-stack-chart', 'drill-channel-stack-tooltip', monthsAgg),
   };
 }
@@ -509,19 +544,6 @@ function drillFlags() {
     <p style="margin:-2px 0 10px 2px;color:var(--ink-400);font-size:0.78rem;">${escapeHTML(note)}</p>`;
   }).join('') + sourceOrdersHTML(allOrdersWithStore());
   return { title: 'Which stores need attention', html };
-}
-
-function aggregatePrinters(stores) {
-  return stores.flatMap(s => s.printers.map(p => ({ ...p, storeName: s.name, storeId: s.id })));
-}
-
-function drillPrinters() {
-  const all = aggregatePrinters(STORES);
-  const html = all.map(p => `<div class="drill-link-row" data-drill="goto-store" data-drill-id="${p.storeId}">
-    <span><b>${p.storeName}</b> — ${p.name}</span>
-    <span style="font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;color:${p.status === 'jammed' ? 'var(--magenta-600)' : 'var(--sage-700)'};">${p.status === 'jammed' ? '⚠ Jammed' : 'Online'}</span>
-  </div>`).join('');
-  return { title: 'Printer status, all stores', html: html + '<p style="margin-top:14px;color:var(--ink-600);font-size:0.85rem;">Click a store to open its Printers tab.</p>' };
 }
 
 function drillTrafficTrend() {
@@ -589,7 +611,7 @@ function handleKpiClick(kpiId, evt) {
     else if (kpiId === 'kpi-dish') openDrill(drillDishBoard(), evt);
     else if (kpiId === 'kpi-flags') openDrill(drillFlags(), evt);
     else if (kpiId === 'kpi-traffic') openDrill(drillTrafficTrend(), evt);
-    else if (kpiId === 'kpi-printers') openDrill(drillPrinters(), evt);
+    else if (kpiId === 'kpi-pie') openDrill(drillChannelMix(), evt);
   } else {
     const store = STORES.find(s => s.id === CURRENT.id);
     if (kpiId === 'kpi-orders') openDrill(drillStoreMonths(store), evt);
@@ -630,8 +652,7 @@ function renderOverview() {
   const flaggedCount = storesRanked.filter(s => s.flagged).length;
   const latestVisits = latest.visits || 0;
   const visitsDeltaPct = pctDelta(latestVisits, prev.visits || 0);
-  const allPrinters = aggregatePrinters(STORES);
-  const jammedPrinters = allPrinters.filter(p => p.status === 'jammed');
+  const mix = channelMix(latest);
 
   page.innerHTML = `
     <div class="dash-header">
@@ -648,13 +669,41 @@ function renderOverview() {
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders · trending ' + topDish.trend, noDelta: true })}
       ${statTile({ id: 'kpi-flags', label: 'Stores flagged', value: `${flaggedCount} of ${storesRanked.length}`, sub: flaggedCount ? 'Needs attention' : 'All steady', noDelta: true, flagged: flaggedCount > 0 })}
       ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: monthsAgg.map(m => m.visits || 0) })}
-      ${statTile({ id: 'kpi-printers', label: 'Printers jammed', value: `${jammedPrinters.length} of ${allPrinters.length}`, sub: jammedPrinters.length ? 'Needs attention' : 'All clear', noDelta: true, flagged: jammedPrinters.length > 0 })}
+      ${channelPieTileHTML(mix)}
     </div>
     <p class="tile-hint">Click any tile to go deeper — ranked lists, trend charts, and the order book behind every number.</p>
   `;
 
+  drawDonutChart('overview-pie-chart', mix);
   bindSparklines();
   bindCountUps();
+}
+
+function channelPieTileHTML(mix) {
+  return `<div class="kpi-tile kpi-tile--pie" data-kpi="kpi-pie">
+    <div class="label">Orders by channel</div>
+    <div class="pie-tile-body">
+      <svg class="pie-chart" id="overview-pie-chart" viewBox="0 0 100 100"></svg>
+      <div class="pie-legend">
+        ${mix.map(c => `<div><i style="background:${channelColor(c.key)}"></i>${c.name}<b>${c.pct.toFixed(0)}%</b></div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function drawDonutChart(svgId, mix) {
+  const svg = document.getElementById(svgId);
+  if (!svg) return;
+  const cx = 50, cy = 50, r = 34, strokeW = 17;
+  const circumference = 2 * Math.PI * r;
+  let offset = 0;
+  const segs = mix.map(c => {
+    const dash = (c.pct / 100) * circumference;
+    const seg = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${channelColor(c.key)}" stroke-width="${strokeW}" stroke-dasharray="${dash.toFixed(2)} ${(circumference - dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    offset += dash;
+    return seg;
+  }).join('');
+  svg.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--cream-100)" stroke-width="${strokeW}"/>${segs}`;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -852,11 +901,12 @@ function renderStore(storeId, tab) {
   content.innerHTML = `
     ${store.body ? `<div class="note-card">${escapeHTML(store.body)}</div>` : ''}
     <div class="kpi-row kpi-row--2">
-      ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: store.months.map(monthTotal) })}
-      ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct) })}
-      ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true })}
-      ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: store.months.map(m => m.visits || 0) })}
+      ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: store.months.map(monthTotal), dot: store.flag_metric === 'kpi-orders' })}
+      ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct), dot: store.flag_metric === 'kpi-online' })}
+      ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true, dot: store.flag_metric === 'kpi-dish' })}
+      ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: store.months.map(m => m.visits || 0), dot: store.flag_metric === 'kpi-traffic' })}
     </div>
+    ${store.flag_metric ? '<p class="tile-hint" style="color:var(--magenta-600);">● marks the metric behind this store\'s flag.</p>' : ''}
     <p class="tile-hint">Click any tile to go deeper — the channel split, the trend chart, and the order book behind it.</p>
   `;
   bindSparklines();
@@ -963,8 +1013,9 @@ const TOUR_STEPS = [
   { selector: '[data-tour="sidebar"]', title: 'Welcome to the admin portal', text: "This is a draft prototype of the dashboard Tractor's head office would use — built on mock data, with no real database and no production hosting or domain behind it yet. Let's walk through it." },
   { selector: '.store-switcher', title: 'Switch restaurants anytime', text: 'This dropdown jumps straight to any store, or back to the head-office Overview — from wherever you are on the site.' },
   { selector: '[data-tour="kpi-0"]', title: 'Every number opens up', text: "Click any tile and it opens the full ranked list, the trend chart, and the actual order-book rows behind that number — nothing here is just a static label." },
+  { selector: '.kpi-tile--pie', title: 'Orders by channel, live', text: "This one's a real pie chart, straight from the order book. Open it for a Current tab too — today's mix, not just the monthly average." },
   { selector: '[data-tour="kpi-grid"]', title: 'Built to fit on one screen', text: 'Every box is clickable and its detail lives one click away in an overlay, so the overview itself never needs scrolling to see everything at a glance.' },
-  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open any store to find its Orders and Printers tabs — the order book and the kitchen screen itself. Replay this tour anytime, and remember: every figure here is illustrative, not real Tractor data." },
+  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open a flagged store (the dot in the sidebar) and its Overview marks exactly which tile is behind the flag. Each store also has Orders and Printers tabs — the order book and the kitchen screen itself. Replay this tour anytime, and remember: every figure here is illustrative, not real Tractor data." },
 ];
 
 let tourIndex = 0;
@@ -1108,6 +1159,14 @@ async function boot() {
       toggle.textContent = toggle.textContent.replace(open ? '▾' : '▸', open ? '▸' : '▾');
       return;
     }
+    const mixTab = e.target.closest('.dash-tab[data-mix-tab]');
+    if (mixTab) {
+      mixTab.parentElement.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+      mixTab.classList.add('active');
+      const target = mixTab.dataset.mixTab;
+      document.querySelectorAll('[data-mix-view]').forEach(v => { v.hidden = v.dataset.mixView !== target; });
+      return;
+    }
     const row = e.target.closest('[data-drill]');
     if (row) dispatchDrillFromOverlay(row.dataset.drill, row.dataset.drillId);
   });
@@ -1116,7 +1175,10 @@ async function boot() {
   document.getElementById('drill-back').addEventListener('click', popDrill);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrill(); });
 
-  document.getElementById('start-tour').addEventListener('click', startTour);
+  document.getElementById('start-tour').addEventListener('click', (e) => {
+    e.currentTarget.classList.remove('is-pulsing');
+    startTour();
+  });
   document.getElementById('tour-next').addEventListener('click', nextTourStep);
   document.getElementById('tour-skip').addEventListener('click', endTour);
 

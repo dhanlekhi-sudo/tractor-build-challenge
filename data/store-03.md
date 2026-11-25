@@ -2,6 +2,7 @@
 id: "03"
 name: Store 03
 address: "Langley, BC"
+flag_metric: kpi-online # which KPI tile on this store's Overview the flag dot marks
 months:
   - label: Jun
     doordash: 190
