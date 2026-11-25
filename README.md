@@ -1,9 +1,15 @@
 # Tractor Build Challenge — One Order Book, Every Channel
 
-Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge, built as two things:
+Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge.
 
-1. **[`index.html`](index.html)** — an interactive system map of the submission itself: one big diagram of the whole order flow, click any box to see how that piece works (the DoorDash/Uber Eats integration paths, the order book schema, kitchen/dispatch, the Payout Auditor, and the insights agent team).
-2. **[`dashboard.html`](dashboard.html)** — the actual product: a head-office admin portal. One "Overview" rollup across all stores, a dashboard per store, click-to-drill KPI tiles, and a guided tour.
+**Live:**
+- **[Submission walkthrough →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/)** — an interactive system map of the whole order flow. Click any box to see how that piece works.
+- **[Head Office Dashboard →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/dashboard.html)** — the actual product: an admin portal with a head-office rollup, a dashboard per store, drillable KPIs, and a guided tour (click **Take the tour** in the sidebar).
+
+Built as two pages:
+
+1. **[`index.html`](index.html)** — the submission itself, as a diagram-first walkthrough: the DoorDash/Uber Eats integration paths, the order book schema, kitchen/dispatch, the Payout Auditor, and the insights agent team.
+2. **[`dashboard.html`](dashboard.html)** — the head-office admin portal: total orders by channel (DoorDash / Uber Eats / in-store / website), a store switcher, monthly trends, and a top-5 trending-dish leaderboard, all computed live from the order book data files.
 
 No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub Pages.
 
