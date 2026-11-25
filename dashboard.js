@@ -1,8 +1,13 @@
 /* ============================================================
    Tractor Head Office Dashboard
-   One source of truth: data/store-XX.md (YAML frontmatter + a
-   short note). Every number on every screen is computed from it
-   at load time — edit a store file, the whole portal updates.
+   Two sources of truth, deliberately separate:
+   - data/store-XX.md   — config: months/channel totals, printers,
+     top-dish summary, the store's note. Small enough to hand-edit.
+   - data/orders/store-XX.xlsx — the actual order book: one row per
+     order, every day of the month. Real Excel files, read in the
+     browser with SheetJS. The Orders tab, the Printers tab's
+     kitchen-screen preview, and every "view the orders behind
+     this" drill-down all read from here, not from the .md file.
    ============================================================ */
 
 let STORES = [];
@@ -14,8 +19,16 @@ let currentDrillContent = null;
 
 async function loadStores() {
   const ids = ['01', '02', '03', '04'];
-  const texts = await Promise.all(ids.map(id => fetch(`data/store-${id}.md`).then(r => r.text())));
-  return texts.map(parseStoreMarkdown).sort((a, b) => a.id.localeCompare(b.id));
+  const stores = await Promise.all(ids.map(async (id) => {
+    const [mdText, xlsxBuf] = await Promise.all([
+      fetch(`data/store-${id}.md`).then(r => r.text()),
+      fetch(`data/orders/store-${id}.xlsx`).then(r => r.arrayBuffer()),
+    ]);
+    const store = parseStoreMarkdown(mdText);
+    store.orders = parseOrdersWorkbook(xlsxBuf);
+    return store;
+  }));
+  return stores.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 function parseStoreMarkdown(text) {
@@ -24,6 +37,21 @@ function parseStoreMarkdown(text) {
   data.body = match ? match[2].trim() : '';
   return data;
 }
+
+function parseOrdersWorkbook(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet, { raw: true }).map(r => ({
+    order_no: String(r.order_no), date: String(r.date), time: String(r.time),
+    source: String(r.source), dish: String(r.dish), total: Number(r.total), status: String(r.status),
+  }));
+}
+
+function distinctDates(orders) {
+  return Array.from(new Set(orders.map(o => o.date))).sort();
+}
+
+function ordersOnDate(orders, dateStr) { return orders.filter(o => o.date === dateStr); }
 
 function isFlagged(store) { return /^flagged\./i.test((store.body || '').trim()); }
 
@@ -483,6 +511,19 @@ function drillFlags() {
   return { title: 'Which stores need attention', html };
 }
 
+function aggregatePrinters(stores) {
+  return stores.flatMap(s => s.printers.map(p => ({ ...p, storeName: s.name, storeId: s.id })));
+}
+
+function drillPrinters() {
+  const all = aggregatePrinters(STORES);
+  const html = all.map(p => `<div class="drill-link-row" data-drill="goto-store" data-drill-id="${p.storeId}">
+    <span><b>${p.storeName}</b> — ${p.name}</span>
+    <span style="font-family:var(--mono);font-size:0.68rem;text-transform:uppercase;color:${p.status === 'jammed' ? 'var(--magenta-600)' : 'var(--sage-700)'};">${p.status === 'jammed' ? '⚠ Jammed' : 'Online'}</span>
+  </div>`).join('');
+  return { title: 'Printer status, all stores', html: html + '<p style="margin-top:14px;color:var(--ink-600);font-size:0.85rem;">Click a store to open its Printers tab.</p>' };
+}
+
 function drillTrafficTrend() {
   const monthsAgg = aggregateMonths(STORES);
   const latest = monthsAgg[monthsAgg.length - 1];
@@ -548,6 +589,7 @@ function handleKpiClick(kpiId, evt) {
     else if (kpiId === 'kpi-dish') openDrill(drillDishBoard(), evt);
     else if (kpiId === 'kpi-flags') openDrill(drillFlags(), evt);
     else if (kpiId === 'kpi-traffic') openDrill(drillTrafficTrend(), evt);
+    else if (kpiId === 'kpi-printers') openDrill(drillPrinters(), evt);
   } else {
     const store = STORES.find(s => s.id === CURRENT.id);
     if (kpiId === 'kpi-orders') openDrill(drillStoreMonths(store), evt);
@@ -588,6 +630,8 @@ function renderOverview() {
   const flaggedCount = storesRanked.filter(s => s.flagged).length;
   const latestVisits = latest.visits || 0;
   const visitsDeltaPct = pctDelta(latestVisits, prev.visits || 0);
+  const allPrinters = aggregatePrinters(STORES);
+  const jammedPrinters = allPrinters.filter(p => p.status === 'jammed');
 
   page.innerHTML = `
     <div class="dash-header">
@@ -604,6 +648,7 @@ function renderOverview() {
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders · trending ' + topDish.trend, noDelta: true })}
       ${statTile({ id: 'kpi-flags', label: 'Stores flagged', value: `${flaggedCount} of ${storesRanked.length}`, sub: flaggedCount ? 'Needs attention' : 'All steady', noDelta: true, flagged: flaggedCount > 0 })}
       ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: monthsAgg.map(m => m.visits || 0) })}
+      ${statTile({ id: 'kpi-printers', label: 'Printers jammed', value: `${jammedPrinters.length} of ${allPrinters.length}`, sub: jammedPrinters.length ? 'Needs attention' : 'All clear', noDelta: true, flagged: jammedPrinters.length > 0 })}
     </div>
     <p class="tile-hint">Click any tile to go deeper — ranked lists, trend charts, and the order book behind every number.</p>
   `;
@@ -612,32 +657,122 @@ function renderOverview() {
   bindCountUps();
 }
 
-function buildOrdersTabHTML(store) {
-  const channels = ['All', 'DoorDash', 'Uber Eats', 'In-store', 'Website'];
-  return `
-    <div class="filter-row">${channels.map(c => `<button class="filter-chip ${c === 'All' ? 'active' : ''}" data-filter="${c}">${c}</button>`).join('')}</div>
-    <table class="data">
-      <thead><tr><th>Order</th><th>Source</th><th>Time</th><th>Dish</th><th>Total</th><th>Status</th></tr></thead>
-      <tbody id="orders-tbody">${store.recent_orders.map(orderRowHTML).join('')}</tbody>
-    </table>`;
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatDateLabel(dateStr) {
+  const [, m, d] = dateStr.split('-').map(Number);
+  return `${MONTH_NAMES[m - 1]} ${d}`;
 }
 
-function orderRowHTML(o) {
-  return `<tr data-source="${o.source}">
-    <td>${o.order_no}</td>
-    <td><span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span></td>
-    <td>${o.time}</td><td>${o.dish}</td><td>$${o.total.toFixed(2)}</td>
-    <td><span class="status status--${o.status === 'Review' ? 'review' : 'ok'}">${o.status}</span></td>
-  </tr>`;
+function dailyOrderCounts(orders) {
+  const map = new Map();
+  orders.forEach(o => map.set(o.date, (map.get(o.date) || 0) + 1));
+  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date, count, label: String(Number(date.split('-')[2])) }));
+}
+
+function buildOrdersTabHTML(store) {
+  const channels = ['All', 'DoorDash', 'Uber Eats', 'In-store', 'Website'];
+  const dates = distinctDates(store.orders);
+  const latest = dates[dates.length - 1];
+  const dayOptions = dates.map(d => `<option value="${d}" ${d === latest ? 'selected' : ''}>${formatDateLabel(d)}</option>`).join('');
+  return `
+    <div class="section-label">Orders per day — ${formatDateLabel(dates[0]).split(' ')[0]} ${dates[0].split('-')[0]}</div>
+    <div class="dash-card chart-wrap" style="margin-bottom:20px;"><svg class="linechart" id="daily-trend-chart"></svg><div class="chart-tooltip" id="daily-trend-tooltip"></div></div>
+    <div class="filter-row">
+      <select id="order-day-select" class="day-select">
+        <option value="__all__">All ${dates.length} days</option>
+        ${dayOptions}
+      </select>
+      ${channels.map(c => `<button class="filter-chip ${c === 'All' ? 'active' : ''}" data-filter="${c}">${c}</button>`).join('')}
+    </div>
+    <div id="receipts-wrap">${receiptsSectionHTML(ordersOnDate(store.orders, latest))}</div>
+
+    <div class="section-label section-label--tech">Where this table feeds</div>
+    <div class="data-flow" id="data-flow">
+      <svg class="connectors" id="data-flow-connectors"></svg>
+      <div class="data-flow__inner">
+        <div class="data-flow__source" id="flow-source">
+          <div class="data-flow__source-bar"><span></span><span></span><span></span></div>
+          <div class="data-flow__source-label">store-${store.id}.xlsx</div>
+          <div class="data-flow__source-sub">${store.orders.length.toLocaleString()} rows · ${dates.length} days</div>
+        </div>
+        <div class="data-flow__targets">
+          <div class="data-flow__node" id="flow-kpi" data-flow-action="overview">KPI tiles<span>counts &amp; totals, this page</span></div>
+          <div class="data-flow__node" id="flow-channel" data-flow-action="channel">Channel mix<span>Online Share drill-down</span></div>
+          <div class="data-flow__node" id="flow-dish" data-flow-action="dish">Dish leaderboard<span>Top Dish drill-down</span></div>
+          <div class="data-flow__node" id="flow-printers" data-flow-action="printers">Kitchen screen<span>Printers tab</span></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function drawDataFlowConnectors() {
+  const container = document.getElementById('data-flow');
+  const svg = document.getElementById('data-flow-connectors');
+  const source = document.getElementById('flow-source');
+  if (!container || !svg || !source) return;
+  const targets = ['flow-kpi', 'flow-channel', 'flow-dish', 'flow-printers'].map(id => document.getElementById(id)).filter(Boolean);
+  const cRect = container.getBoundingClientRect();
+  const sRect = source.getBoundingClientRect();
+  const p1 = { x: sRect.right - cRect.left, y: sRect.top - cRect.top + sRect.height / 2 };
+  svg.innerHTML = targets.map(t => {
+    const r = t.getBoundingClientRect();
+    const p2 = { x: r.left - cRect.left, y: r.top - cRect.top + r.height / 2 };
+    const dx = Math.max(24, (p2.x - p1.x) * 0.5);
+    return `<path class="connector connector--live" d="M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}"/>`;
+  }).join('');
+}
+
+function receiptCardHTML(o) {
+  const isDelivery = o.source === 'DoorDash' || o.source === 'Uber Eats';
+  return `<div class="ticket receipt ${isDelivery ? 'ticket--blue' : 'ticket--white'}" data-source="${o.source}">
+    <div class="receipt__head">
+      <span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span>
+      <span class="receipt__date">${formatDateLabel(o.date)} · ${o.time}</span>
+    </div>
+    <div class="receipt__id">#${o.order_no}</div>
+    <div class="receipt__item">${o.dish}</div>
+    <div class="receipt__foot">
+      <span class="receipt__total">$${o.total.toFixed(2)}</span>
+      <span class="status status--${o.status === 'Review' ? 'review' : 'ok'}">${o.status}</span>
+    </div>
+    <div class="receipt__actions">
+      <button class="receipt__btn" data-receipt-action="ready">Order ready</button>
+      <button class="receipt__btn receipt__btn--ship" data-receipt-action="shipped">Shipped</button>
+    </div>
+  </div>`;
+}
+
+function receiptsSectionHTML(orders) {
+  const white = orders.filter(o => o.source === 'In-store' || o.source === 'Website');
+  const blue = orders.filter(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
+  return `
+    <div class="section-label">In-store &amp; pickup — white — ${white.length}</div>
+    <div class="receipt-grid">${white.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No in-store or pickup orders for this selection.</p>'}</div>
+    <div class="section-label" style="margin-top:28px;">Delivery — blue — ${blue.length}</div>
+    <div class="receipt-grid">${blue.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No delivery orders for this selection.</p>'}</div>
+  `;
+}
+
+function renderOrdersReceipts(store, dayValue) {
+  const orders = dayValue === '__all__' ? store.orders : ordersOnDate(store.orders, dayValue);
+  document.getElementById('receipts-wrap').innerHTML = receiptsSectionHTML(orders);
+  const activeChip = document.querySelector('.filter-chip.active');
+  applyReceiptFilter(activeChip ? activeChip.dataset.filter : 'All');
+}
+
+function applyReceiptFilter(val) {
+  document.querySelectorAll('.receipt[data-source]').forEach(card => {
+    card.style.display = (val === 'All' || card.dataset.source === val) ? '' : 'none';
+  });
 }
 
 /* ---------------- "the data behind this" — every drill can show its source orders ---------------- */
 
 function allOrdersWithStore() {
-  return STORES.flatMap(s => s.recent_orders.map(o => ({ ...o, storeName: s.name })));
+  return STORES.flatMap(s => s.orders.map(o => ({ ...o, storeName: s.name })));
 }
 
-function ordersForStore(store) { return store.recent_orders.map(o => ({ ...o, storeName: store.name })); }
+function ordersForStore(store) { return store.orders.map(o => ({ ...o, storeName: store.name })); }
 
 function ordersForChannel(channelKey) {
   const names = { doordash: 'DoorDash', ubereats: 'Uber Eats', instore: 'In-store', website: 'Website' };
@@ -650,7 +785,7 @@ function ordersForDish(dishName) {
 
 function compactOrderRowHTML(o) {
   return `<tr>
-    <td>${o.storeName}</td><td>${o.order_no}</td>
+    <td>${o.storeName}</td><td>${o.order_no}</td><td>${formatDateLabel(o.date)}</td>
     <td><span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span></td>
     <td>${o.time}</td><td>${o.dish}</td><td>$${o.total.toFixed(2)}</td>
   </tr>`;
@@ -658,13 +793,15 @@ function compactOrderRowHTML(o) {
 
 function sourceOrdersHTML(orders) {
   if (!orders || !orders.length) return '';
-  const shown = orders.slice(0, 8);
+  const sorted = [...orders].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+  const shown = sorted.slice(0, 8);
   const rows = shown.map(compactOrderRowHTML).join('');
   const more = orders.length > shown.length ? `<p style="margin:8px 0 0;color:var(--ink-400);font-size:0.76rem;">+ ${orders.length - shown.length} more in the order book.</p>` : '';
   return `<div class="source-toggle">
     <button class="source-toggle__btn" data-source-toggle>▸ View the orders behind this (${orders.length})</button>
     <div class="source-toggle__body" hidden>
-      <table class="data"><thead><tr><th>Store</th><th>Order</th><th>Source</th><th>Time</th><th>Dish</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="margin:0 0 10px;color:var(--ink-400);font-size:0.74rem;">Most recent first, read straight from the Excel order book.</p>
+      <table class="data"><thead><tr><th>Store</th><th>Order</th><th>Date</th><th>Source</th><th>Time</th><th>Dish</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
       ${more}
     </div>
   </div>`;
@@ -703,6 +840,8 @@ function renderStore(storeId, tab) {
   const content = document.getElementById('store-tab-content');
   if (tab === 'orders') {
     content.innerHTML = buildOrdersTabHTML(store);
+    drawLineChart('daily-trend-chart', 'daily-trend-tooltip', dailyOrderCounts(store.orders).map(d => ({ label: d.label, value: d.count })), 'var(--ch-instore)');
+    requestAnimationFrame(drawDataFlowConnectors);
     return;
   }
   if (tab === 'printers') {
@@ -712,7 +851,7 @@ function renderStore(storeId, tab) {
 
   content.innerHTML = `
     ${store.body ? `<div class="note-card">${escapeHTML(store.body)}</div>` : ''}
-    <div class="kpi-row">
+    <div class="kpi-row kpi-row--2">
       ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: store.months.map(monthTotal) })}
       ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true })}
@@ -733,16 +872,22 @@ function buildPrintersTabHTML(store) {
       ${p.status === 'jammed' ? '<p style="margin:10px 0 0;font-size:0.82rem;color:var(--ink-600);">Clear the jam and reprint — tickets are rerouting to the other printer in the meantime.</p>' : ''}
     </div>`).join('');
 
-  const inStoreOrder = store.recent_orders.find(o => o.source === 'In-store');
-  const deliveryOrder = store.recent_orders.find(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
+  const dates = distinctDates(store.orders);
+  const today = dates[dates.length - 1];
+  const todaysOrders = ordersOnDate(store.orders, today);
+  const liveOrders = todaysOrders.filter(o => o.status !== 'Settled').sort((a, b) => b.time.localeCompare(a.time));
+  const queueSource = (liveOrders.length ? liveOrders : todaysOrders.slice(-5)).slice(0, 5);
+
+  const inStoreOrder = queueSource.find(o => o.source === 'In-store') || todaysOrders.find(o => o.source === 'In-store');
+  const deliveryOrder = queueSource.find(o => o.source === 'DoorDash' || o.source === 'Uber Eats') || todaysOrders.find(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
   const jammedPrinter = printers.find(p => p.status === 'jammed');
 
-  const queueRows = store.recent_orders.slice(0, 5).map(o => {
+  const queueRows = queueSource.map(o => {
     const toPacking = o.source !== 'In-store';
     const rerouted = toPacking && jammedPrinter;
-    const statusClass = rerouted ? 'rerouted' : 'printed';
-    const statusLabel = rerouted ? 'Rerouted' : 'Printed';
-    return `<div class="pq-row"><span>#${o.order_no} → ${toPacking ? 'Packing' : 'Counter'} printer${rerouted ? ' (packing jammed)' : ''}</span><span class="pq-status ${statusClass}">${statusLabel}</span></div>`;
+    const statusClass = rerouted ? 'rerouted' : (o.status === 'Settled' || o.status === 'Handed off' ? 'printed' : 'queued');
+    const statusLabel = rerouted ? 'Rerouted' : (statusClass === 'printed' ? 'Printed' : o.status);
+    return `<div class="pq-row"><span>${o.time} · #${o.order_no} → ${toPacking ? 'Packing' : 'Counter'} printer${rerouted ? ' (packing jammed)' : ''}</span><span class="pq-status ${statusClass}">${statusLabel}</span></div>`;
   }).join('');
 
   return `
@@ -898,8 +1043,31 @@ async function boot() {
     if (chip) {
       chip.parentElement.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      const val = chip.dataset.filter;
-      document.querySelectorAll('#orders-tbody tr').forEach(tr => { tr.style.display = (val === 'All' || tr.dataset.source === val) ? '' : 'none'; });
+      applyReceiptFilter(chip.dataset.filter);
+      return;
+    }
+
+    const receiptBtn = e.target.closest('.receipt__btn[data-receipt-action]');
+    if (receiptBtn) {
+      receiptBtn.classList.toggle('is-done');
+      const card = receiptBtn.closest('.receipt');
+      const statusEl = card.querySelector('.receipt__foot .status');
+      if (receiptBtn.dataset.receiptAction === 'ready' && receiptBtn.classList.contains('is-done')) {
+        statusEl.textContent = 'Ready'; statusEl.className = 'status status--ok';
+      } else if (receiptBtn.dataset.receiptAction === 'shipped' && receiptBtn.classList.contains('is-done')) {
+        statusEl.textContent = 'Handed off'; statusEl.className = 'status status--ok';
+      }
+      return;
+    }
+
+    const flowNode = e.target.closest('.data-flow__node[data-flow-action]');
+    if (flowNode) {
+      const action = flowNode.dataset.flowAction;
+      if (action === 'printers') { location.hash = `#store-${CURRENT.id}/printers`; return; }
+      if (action === 'overview') { location.hash = `#store-${CURRENT.id}`; return; }
+      const store = STORES.find(s => s.id === CURRENT.id);
+      if (action === 'channel') { openDrill(drillStoreChannelsContent(store), e); return; }
+      if (action === 'dish') { openDrill(drillStoreDishes(store), e); return; }
       return;
     }
 
@@ -916,6 +1084,14 @@ async function boot() {
     // clicked elsewhere on the page — close the dropdown if it's open
     const openMenu = document.getElementById('store-switcher-menu');
     if (openMenu && !openMenu.hidden) openMenu.hidden = true;
+  });
+
+  document.getElementById('dash-main').addEventListener('change', (e) => {
+    const sel = e.target.closest('#order-day-select');
+    if (sel && CURRENT.name === 'store') {
+      const store = STORES.find(s => s.id === CURRENT.id);
+      renderOrdersReceipts(store, sel.value);
+    }
   });
 
   document.getElementById('dash-nav').addEventListener('click', (e) => {

@@ -46,81 +46,23 @@ printers:
     status: online
 top_dishes:
   - name: Everyday Bowl
-    orders: 240
+    orders: 354
     trend: flat
   - name: Harvest Bowl
-    orders: 200
+    orders: 300
     trend: flat
   - name: Miso Carrot Soup
-    orders: 150
+    orders: 240
     trend: down
   - name: Green Juice
-    orders: 120
+    orders: 192
     trend: down
   - name: Build-Your-Own Bowl
-    orders: 110
+    orders: 156
     trend: down
-recent_orders:
-  - order_no: T-23701
-    source: In-store
-    time: "08:02"
-    dish: Everyday Bowl
-    total: 15.00
-    status: Settled
-  - order_no: T-23706
-    source: In-store
-    time: "11:22"
-    dish: Harvest Bowl
-    total: 15.50
-    status: Settled
-  - order_no: T-23711
-    source: DoorDash
-    time: "11:50"
-    dish: Everyday Bowl
-    total: 19.50
-    status: Settled
-  - order_no: T-23716
-    source: In-store
-    time: "12:05"
-    dish: Miso Carrot Soup
-    total: 8.50
-    status: Settled
-  - order_no: T-23721
-    source: Website
-    time: "12:18"
-    dish: Build-Your-Own Bowl
-    total: 16.00
-    status: Settled
-  - order_no: T-23726
-    source: In-store
-    time: "12:30"
-    dish: Everyday Bowl
-    total: 15.00
-    status: Handed off
-  - order_no: T-23731
-    source: Uber Eats
-    time: "12:42"
-    dish: Green Juice
-    total: 10.00
-    status: In prep
-  - order_no: T-23736
-    source: In-store
-    time: "12:54"
-    dish: Harvest Bowl
-    total: 15.50
-    status: Ready
-  - order_no: T-23741
-    source: DoorDash
-    time: "13:05"
-    dish: Everyday Bowl
-    total: 19.50
-    status: Printed
-  - order_no: T-23746
-    source: In-store
-    time: "13:15"
-    dish: Build-Your-Own Bowl
-    total: 16.50
-    status: Received
+# Individual orders live in data/orders/store-04.xlsx — that file, not this
+# one, is the source of truth for order-level data (regenerate both with
+# scripts/generate_orders.py if the channel totals above ever change).
 ---
 
 Steady, lowest volume of the four stores. No flags this week.

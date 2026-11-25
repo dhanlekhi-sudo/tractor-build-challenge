@@ -46,93 +46,23 @@ printers:
     status: online
 top_dishes:
   - name: Everyday Bowl
-    orders: 412
+    orders: 564
     trend: up
   - name: Harvest Bowl
-    orders: 298
+    orders: 349
     trend: up
   - name: Miso Carrot Soup
-    orders: 210
+    orders: 313
     trend: flat
   - name: Green Juice
-    orders: 180
+    orders: 208
     trend: down
   - name: Build-Your-Own Bowl
-    orders: 165
+    orders: 206
     trend: up
-recent_orders:
-  - order_no: T-20401
-    source: In-store
-    time: "08:12"
-    dish: Harvest Bowl
-    total: 15.50
-    status: Settled
-  - order_no: T-20406
-    source: Website
-    time: "11:20"
-    dish: Build-Your-Own Bowl
-    total: 16.25
-    status: Settled
-  - order_no: T-20411
-    source: DoorDash
-    time: "11:48"
-    dish: "Everyday Bowl, no feta"
-    total: 24.00
-    status: Settled
-  - order_no: T-20418
-    source: DoorDash
-    time: "12:04"
-    dish: "Everyday Bowl, no feta + Miso Carrot Soup"
-    total: 24.00
-    status: Settled
-  - order_no: T-20422
-    source: In-store
-    time: "12:10"
-    dish: Everyday Bowl
-    total: 15.00
-    status: Settled
-  - order_no: T-20427
-    source: Uber Eats
-    time: "12:22"
-    dish: Harvest Bowl
-    total: 17.00
-    status: Settled
-  - order_no: T-20431
-    source: In-store
-    time: "12:38"
-    dish: "Everyday Bowl, no feta"
-    total: 15.00
-    status: Handed off
-  - order_no: T-20436
-    source: Uber Eats
-    time: "12:41"
-    dish: Everyday Bowl
-    total: 19.50
-    status: In prep
-  - order_no: T-20440
-    source: Website
-    time: "12:44"
-    dish: Green Juice
-    total: 9.00
-    status: Ready
-  - order_no: T-20444
-    source: DoorDash
-    time: "12:50"
-    dish: Build-Your-Own Bowl
-    total: 18.00
-    status: Printed
-  - order_no: T-20447
-    source: In-store
-    time: "13:02"
-    dish: Harvest Bowl
-    total: 15.50
-    status: Accepted
-  - order_no: T-20452
-    source: Website
-    time: "13:10"
-    dish: Miso Carrot Soup
-    total: 8.50
-    status: Received
+# Individual orders live in data/orders/store-01.xlsx — that file, not this
+# one, is the source of truth for order-level data (regenerate both with
+# scripts/generate_orders.py if the channel totals above ever change).
 ---
 
 Steady store. Ticket time and on-time rate both sit at or above the network median this week.
