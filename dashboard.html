@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tractor Head Office — Admin Portal</title>
+<meta name="description" content="Tractor's head-office dashboard: orders, channel mix and menu trends, built on one order book.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body class="is-dashboard">
+
+<div class="dash">
+  <aside class="dash-sidebar" data-tour="sidebar">
+    <div class="dash-sidebar__brand">TRACTOR<span>Head Office · Admin Portal</span></div>
+    <nav class="dash-nav" id="dash-nav">
+      <button class="dash-nav__item" data-route="overview" data-tour="nav-overview">Overview</button>
+      <div class="dash-nav__label">Stores</div>
+      <!-- store nav items are injected by dashboard.js once data loads -->
+    </nav>
+    <button class="dash-tour-btn" id="start-tour" data-tour="tour-btn">▶ Take the tour</button>
+    <a class="dash-sidebar__back" href="index.html">← Back to submission</a>
+  </aside>
+
+  <main class="dash-main" id="dash-main" data-tour="main">
+    <div class="dash-page" id="dash-page">
+      <p style="font-family: var(--mono); color: var(--ink-400); font-size:0.8rem;">Loading order book…</p>
+    </div>
+  </main>
+</div>
+
+<!-- KPI / rank-row drill-down overlay, reused for every level -->
+<div class="drill-overlay" id="drill-overlay">
+  <div class="drill-overlay__backdrop" id="drill-backdrop"></div>
+  <div class="drill-panel" id="drill-panel">
+    <div class="drill-panel__header">
+      <div>
+        <button class="drill-back" id="drill-back" hidden>← Back</button>
+        <h4 id="drill-title">Detail</h4>
+      </div>
+      <button class="drill-close" id="drill-close" aria-label="Close">×</button>
+    </div>
+    <div class="drill-panel__body" id="drill-body"></div>
+  </div>
+</div>
+
+<!-- guided tour -->
+<div class="tour-layer" id="tour-layer" hidden>
+  <div class="tour-spotlight" id="tour-spotlight"></div>
+  <div class="tour-cursor" id="tour-cursor"></div>
+  <div class="tour-card" id="tour-card">
+    <div class="tour-card__eyebrow" id="tour-step-count">Step 1 of 8</div>
+    <h4 id="tour-title">Title</h4>
+    <p id="tour-text">Text</p>
+    <div class="tour-card__actions">
+      <button id="tour-skip">Skip tour</button>
+      <button id="tour-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>
