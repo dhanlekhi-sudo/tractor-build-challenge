@@ -9,8 +9,10 @@ One order-book rollup across all stores, a dashboard per store (switch with
 the dropdown in the header or the sidebar), drillable KPIs, a ranked store
 leaderboard, and a guided tour (click **Take the tour** in the sidebar).
 Total orders by channel (DoorDash / Uber Eats / in-store / website), monthly
-trends, and a top-5 trending-dish leaderboard — all computed live from the
-order-book data files, nothing hardcoded twice.
+trends, foot traffic, a top-5 trending-dish leaderboard, and — per store — a
+**Printers** tab: printer status (including a jammed state that reroutes the
+print queue), and a kitchen-screen preview of the actual order tickets. All
+of it computed live from the order-book data files, nothing hardcoded twice.
 
 No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub
 Pages.
@@ -48,6 +50,12 @@ months:
     ubereats: 178
     instore: 1132
     website: 101
+    visits: 1585        # foot traffic — total visits this month
+printers:
+  - name: Counter printer
+    status: online       # online | jammed
+  - name: Packing printer
+    status: online
 top_dishes:
   - name: Everyday Bowl
     orders: 412
@@ -65,9 +73,10 @@ Steady store. Ticket time and on-time rate both sit at or above the network medi
 
 Change a number, save, refresh the page. That's it.
 
-- **`months`** drives the monthly trend chart, the channel-mix bars, and the "online share" KPI. Add a new entry to extend the trend; keep the same `label`s across all four store files (the Head Office Overview sums stores month-by-month, so it assumes they line up).
+- **`months`** drives the monthly trend chart, the channel-mix bars, the "online share" KPI, and (via `visits`) the foot-traffic KPI/chart. Add a new entry to extend the trend; keep the same `label`s across all four store files (the Head Office Overview sums stores month-by-month, so it assumes they line up).
+- **`printers`** drives that store's **Printers** tab — one card per printer, `status: jammed` shows a jam warning and reroutes that printer's share of the print-queue mock and the kitchen-screen ticket preview to the other printer.
 - **`top_dishes`** drives each store's dish leaderboard. The Overview page's leaderboard is the sum of all four stores' dish lists — add a dish to a store file and it'll appear head-office-wide automatically.
-- **`recent_orders`** is what shows in that store's **Orders** tab — the literal order-book slice for that store.
+- **`recent_orders`** is what shows in that store's **Orders** tab — the literal order-book slice for that store — and supplies the example tickets on the **Printers** tab's kitchen-screen preview (first `In-store` order → white/counter ticket, first `DoorDash`/`Uber Eats` order → blue/packing ticket).
 - The line of text after the closing `---` is the store's note — it shows as the highlighted callout at the top of that store's Overview tab, and a store is marked **Flagged** in every list if that note starts with the word "Flagged."
 - A store's id (`"01"`) must match its filename (`store-01.md`) and is what the URL hash and nav use (`#store-01`, `#store-01/orders`).
 

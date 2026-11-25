@@ -109,6 +109,19 @@ body.is-dashboard { overflow: hidden; }
 .store-switcher__item.active { color: var(--magenta-600); font-weight: 600; }
 .store-switcher__item .flag-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--magenta-600); }
 
+/* ---------- printers tab ---------- */
+
+.printer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.printer-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.printer-card.is-jammed { border-color: var(--magenta-600); background: var(--magenta-100); }
+.printer-card .pname { font-weight: 600; font-size: 0.95rem; margin-bottom: 10px; }
+.printer-card .pstatus {
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px; display: inline-block;
+}
+.printer-card .pstatus.online { background: var(--sage-100); color: var(--sage-700); }
+.printer-card .pstatus.jammed { background: var(--magenta-600); color: #fff; }
+
 .dash-tabs { display: flex; gap: 4px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
 .dash-tab {
   all: unset; cursor: pointer; padding: 10px 4px; margin-right: 22px;

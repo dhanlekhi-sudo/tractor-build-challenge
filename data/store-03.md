@@ -8,31 +8,42 @@ months:
     ubereats: 140
     instore: 1010
     website: 70
+    visits: 1414
   - label: Jul
     doordash: 205
     ubereats: 152
     instore: 985
     website: 80
+    visits: 1379
   - label: Aug
     doordash: 220
     ubereats: 165
     instore: 965
     website: 92
+    visits: 1351
   - label: Sep
     doordash: 238
     ubereats: 178
     instore: 945
     website: 102
+    visits: 1323
   - label: Oct
     doordash: 255
     ubereats: 195
     instore: 925
     website: 112
+    visits: 1295
   - label: Nov
     doordash: 272
     ubereats: 211
     instore: 906
     website: 121
+    visits: 1268
+printers:
+  - name: Counter printer
+    status: online
+  - name: Packing printer
+    status: jammed
 top_dishes:
   - name: Harvest Bowl
     orders: 340

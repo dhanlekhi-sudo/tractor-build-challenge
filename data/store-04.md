@@ -8,31 +8,42 @@ months:
     ubereats: 85
     instore: 1010
     website: 48
+    visits: 1414
   - label: Jul
     doordash: 112
     ubereats: 86
     instore: 1000
     website: 49
+    visits: 1400
   - label: Aug
     doordash: 115
     ubereats: 88
     instore: 995
     website: 50
+    visits: 1393
   - label: Sep
     doordash: 118
     ubereats: 90
     instore: 985
     website: 51
+    visits: 1379
   - label: Oct
     doordash: 120
     ubereats: 93
     instore: 975
     website: 52
+    visits: 1365
   - label: Nov
     doordash: 123
     ubereats: 96
     instore: 969
     website: 54
+    visits: 1357
+printers:
+  - name: Counter printer
+    status: online
+  - name: Packing printer
+    status: online
 top_dishes:
   - name: Everyday Bowl
     orders: 240

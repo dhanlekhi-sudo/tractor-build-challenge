@@ -398,8 +398,8 @@ function drillStoreChannelsContent(store, opts = {}) {
 }
 
 function drillStoreMonths(store) {
-  const rows = store.months.map(m => `<tr><td>${m.label}</td><td>${m.doordash}</td><td>${m.ubereats}</td><td>${m.instore}</td><td>${m.website}</td><td><b>${monthTotal(m).toLocaleString()}</b></td></tr>`).join('');
-  const html = `<table class="data"><thead><tr><th>Month</th><th>DoorDash</th><th>Uber Eats</th><th>In-store</th><th>Website</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const rows = store.months.map(m => `<tr><td>${m.label}</td><td>${m.doordash}</td><td>${m.ubereats}</td><td>${m.instore}</td><td>${m.website}</td><td><b>${monthTotal(m).toLocaleString()}</b></td><td>${(m.visits || 0).toLocaleString()}</td></tr>`).join('');
+  const html = `<table class="data"><thead><tr><th>Month</th><th>DoorDash</th><th>Uber Eats</th><th>In-store</th><th>Website</th><th>Total orders</th><th>Foot traffic</th></tr></thead><tbody>${rows}</tbody></table>`;
   return { title: `${store.name} — orders by month`, html };
 }
 
@@ -423,6 +423,7 @@ function handleKpiClick(kpiId, evt) {
     if (kpiId === 'kpi-orders') openDrill(drillStoreMonths(store), evt);
     else if (kpiId === 'kpi-online') openDrill(drillStoreChannelsContent(store, { showLink: false }), evt);
     else if (kpiId === 'kpi-dish') openDrill(drillStoreDishes(store), evt);
+    else if (kpiId === 'kpi-traffic') openDrill(drillStoreMonths(store), evt);
   }
 }
 
@@ -534,6 +535,8 @@ function renderStore(storeId, tab) {
   const onlineShare = onlineSharePct(latest);
   const onlineDelta = onlineShare - onlineSharePct(prev);
   const topDish = store.top_dishes[0];
+  const latestVisits = latest.visits || 0;
+  const visitsDeltaPct = pctDelta(latestVisits, prev.visits || 0);
 
   page.innerHTML = `
     <div class="dash-header">
@@ -546,6 +549,7 @@ function renderStore(storeId, tab) {
     <div class="dash-tabs">
       <button class="dash-tab ${tab === 'overview' ? 'active' : ''}" data-store-tab="overview">Overview</button>
       <button class="dash-tab ${tab === 'orders' ? 'active' : ''}" data-store-tab="orders">Orders</button>
+      <button class="dash-tab ${tab === 'printers' ? 'active' : ''}" data-store-tab="printers">Printers</button>
     </div>
     <div id="store-tab-content"></div>
   `;
@@ -555,6 +559,10 @@ function renderStore(storeId, tab) {
     content.innerHTML = buildOrdersTabHTML(store);
     return;
   }
+  if (tab === 'printers') {
+    content.innerHTML = buildPrintersTabHTML(store);
+    return;
+  }
 
   content.innerHTML = `
     ${store.body ? `<div class="note-card">${escapeHTML(store.body)}</div>` : ''}
@@ -562,6 +570,7 @@ function renderStore(storeId, tab) {
       ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: store.months.map(monthTotal) })}
       ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true })}
+      ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: store.months.map(m => m.visits || 0) })}
     </div>
     <div class="dash-section">
       <div class="dash-section__title">Channel mix — ${latest.label}</div>
@@ -572,15 +581,76 @@ function renderStore(storeId, tab) {
       <div class="dash-card chart-wrap"><svg class="linechart" id="store-trend-chart"></svg><div class="chart-tooltip" id="store-trend-tooltip"></div></div>
     </div>
     <div class="dash-section">
+      <div class="dash-section__title">Foot traffic</div>
+      <div class="dash-card chart-wrap"><svg class="linechart" id="store-traffic-chart"></svg><div class="chart-tooltip" id="store-traffic-tooltip"></div></div>
+    </div>
+    <div class="dash-section">
       <div class="dash-section__title">Top 5 dishes</div>
       <div class="dash-card"><div class="rank-list" id="store-dish-list"></div></div>
     </div>
   `;
   drawRankList('store-channel-list', mix.map(c => ({ name: c.name, value: `${c.pct.toFixed(0)}%`, pct: c.pct, color: channelColor(c.key) })));
   drawLineChart('store-trend-chart', 'store-trend-tooltip', store.months.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
+  drawLineChart('store-traffic-chart', 'store-traffic-tooltip', store.months.map(m => ({ label: m.label, value: m.visits || 0 })), 'var(--ch-instore)');
   drawRankList('store-dish-list', store.top_dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (store.top_dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null })));
   bindSparklines();
   bindCountUps();
+}
+
+function buildPrintersTabHTML(store) {
+  const printers = store.printers || [];
+  const statusCards = printers.map(p => `
+    <div class="printer-card ${p.status === 'jammed' ? 'is-jammed' : ''}">
+      <div class="pname">${p.name}</div>
+      <span class="pstatus ${p.status}">${p.status === 'jammed' ? '⚠ Jammed' : 'Online'}</span>
+      ${p.status === 'jammed' ? '<p style="margin:10px 0 0;font-size:0.82rem;color:var(--ink-600);">Clear the jam and reprint — tickets are rerouting to the other printer in the meantime.</p>' : ''}
+    </div>`).join('');
+
+  const inStoreOrder = store.recent_orders.find(o => o.source === 'In-store');
+  const deliveryOrder = store.recent_orders.find(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
+  const jammedPrinter = printers.find(p => p.status === 'jammed');
+
+  const queueRows = store.recent_orders.slice(0, 5).map(o => {
+    const toPacking = o.source !== 'In-store';
+    const rerouted = toPacking && jammedPrinter;
+    const statusClass = rerouted ? 'rerouted' : 'printed';
+    const statusLabel = rerouted ? 'Rerouted' : 'Printed';
+    return `<div class="pq-row"><span>#${o.order_no} → ${toPacking ? 'Packing' : 'Counter'} printer${rerouted ? ' (packing jammed)' : ''}</span><span class="pq-status ${statusClass}">${statusLabel}</span></div>`;
+  }).join('');
+
+  return `
+    <div class="dash-section">
+      <div class="dash-section__title">Printer status</div>
+      <div class="printer-grid">${statusCards}</div>
+    </div>
+
+    <div class="dash-section">
+      <div class="dash-section__title">Print queue</div>
+      <div class="dash-card"><div class="printer-queue" style="padding:0;">${queueRows}</div></div>
+    </div>
+
+    <div class="dash-section">
+      <div class="dash-section__title">Kitchen display — how it looks in the restaurant</div>
+      <div class="mockwin">
+        <div class="mockwin__bar"><span></span><span></span><span></span><div class="mockwin__title">${store.name} — kitchen screen</div></div>
+        <div class="mockwin__body" style="padding:20px;">
+          <div class="ticket-row" style="margin:0;">
+            ${inStoreOrder ? `<div class="ticket ticket--white">
+              <h5>Counter printer — in-store</h5>
+              <div class="ticket__id">#${inStoreOrder.order_no} · ${inStoreOrder.time}</div>
+              ${inStoreOrder.dish}
+            </div>` : ''}
+            ${deliveryOrder ? `<div class="ticket ticket--blue">
+              <h5>Packing printer — ${deliveryOrder.source}${jammedPrinter ? ' · REROUTED' : ''}</h5>
+              <div class="ticket__id">#${deliveryOrder.order_no} · ${deliveryOrder.time}</div>
+              ${deliveryOrder.dish}
+            </div>` : ''}
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:14px;color:var(--ink-600);font-size:0.85rem;">White paper = in-store/pickup, counter printer. Blue paper = delivery, packing station — staff never read a label, the colour says where it goes.</p>
+    </div>
+  `;
 }
 
 /* ---------------- router ---------------- */
