@@ -1,17 +1,19 @@
 # Tractor Build Challenge — One Order Book, Every Channel
 
-Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge.
+Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge — a working
+prototype of the head-office admin portal the submission proposes.
 
-**Live:**
-- **[Submission walkthrough →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/)** — an interactive system map of the whole order flow. Click any box to see how that piece works.
-- **[Head Office Dashboard →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/dashboard.html)** — the actual product: an admin portal with a head-office rollup, a dashboard per store, drillable KPIs, and a guided tour (click **Take the tour** in the sidebar).
+**Live: [dhanlekhi-sudo.github.io/tractor-build-challenge →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/)**
 
-Built as two pages:
+One order-book rollup across all stores, a dashboard per store (switch with
+the dropdown in the header or the sidebar), drillable KPIs, a ranked store
+leaderboard, and a guided tour (click **Take the tour** in the sidebar).
+Total orders by channel (DoorDash / Uber Eats / in-store / website), monthly
+trends, and a top-5 trending-dish leaderboard — all computed live from the
+order-book data files, nothing hardcoded twice.
 
-1. **[`index.html`](index.html)** — the submission itself, as a diagram-first walkthrough: the DoorDash/Uber Eats integration paths, the order book schema, kitchen/dispatch, the Payout Auditor, and the insights agent team.
-2. **[`dashboard.html`](dashboard.html)** — the head-office admin portal: total orders by channel (DoorDash / Uber Eats / in-store / website), a store switcher, monthly trends, and a top-5 trending-dish leaderboard, all computed live from the order book data files.
-
-No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub Pages.
+No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub
+Pages.
 
 ## Running it locally
 
@@ -19,7 +21,8 @@ No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub Pa
 python3 -m http.server 8743
 ```
 
-Then open `http://localhost:8743/index.html` (the submission) or `http://localhost:8743/dashboard.html` (the dashboard). You need a local server (not a `file://` URL) because the dashboard fetches the `data/*.md` files.
+Then open `http://localhost:8743/`. You need a local server (not a `file://`
+URL) because the dashboard fetches the `data/*.md` files.
 
 ## Editing the dashboard's data
 
@@ -72,7 +75,7 @@ To add a **fifth store**: copy one of the four files, change `id`/`name`/`addres
 
 ## How the dashboard is built
 
-- **`dashboard.html` / `dashboard.css` / `dashboard.js`** — the whole app. `dashboard.css` imports `style.css` so both pages share Tractor's brand tokens (colors, type) from one place.
+- **`index.html` / `dashboard.css` / `dashboard.js`** — the whole app (the HTML file keeps the name `index.html` so it serves at the site root; everything in it is the dashboard). `dashboard.css` imports `style.css` for the shared brand tokens (colors, type). `dashboard.html` is kept only as a redirect, in case that URL was shared anywhere before the site became a single page.
 - Routing is a plain hash router (`#overview`, `#store-01`, `#store-01/orders`) — shareable, bookmarkable, no framework.
 - Every KPI tile and every ranked-bar row is clickable and opens the drill-down overlay (`openDrill` / `pushDrill` in `dashboard.js`) — the same overlay supports multiple levels deep, with a "← Back" to step up one level.
 - Channel colors (`--ch-doordash`, `--ch-ubereats`, `--ch-instore`, `--ch-website` in `style.css`) are a validated color-blind-safe set — see the `dataviz` skill's `scripts/validate_palette.js` if you ever change them; re-validate before shipping a new set.
@@ -84,4 +87,4 @@ This is a static site — push to GitHub and turn on **Settings → Pages → De
 
 ---
 
-*All figures in both the submission and the dashboard are illustrative, not measured Tractor data — see each page's footer.*
+*All figures in this dashboard are illustrative, not measured Tractor data.*

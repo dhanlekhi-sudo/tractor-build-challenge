@@ -3,11 +3,11 @@ description: Screenshot a Tractor dashboard screen, get a design-reviewer critiq
 ---
 
 Run the design refinement loop for: $ARGUMENTS (a screen name — `overview`,
-`store-01`, `store-01/orders`, or `system` for the index.html diagram page).
+`store-01`, or `store-01/orders`).
 
 1. Ensure the static server is running: `python3 -m http.server 8743` from the
    `tractor-build-challenge/` directory (check with `curl -sI
-   http://localhost:8743/dashboard.html` first; only start it if that fails).
+   http://localhost:8743/` first; only start it if that fails).
 2. Using the available browser tool (Claude in Chrome, or the built-in
    Browser pane), navigate to the screen at 1440×900 and capture into
    `.screenshots/`:
@@ -26,7 +26,3 @@ Run the design refinement loop for: $ARGUMENTS (a screen name — `overview`,
    which screen), then repeat from step 2.
 6. Hard cap: 3 iterations. If still below 8, stop and report the remaining
    issues with the final score — do not keep polishing unprompted.
-7. Verify no regression: the connector-line alignment bug on `system`
-   (duplicate `#diagram` id, fixed once already) is the kind of thing a
-   careless CSS change could reintroduce — if you touched `.diagram` layout,
-   re-check the lines land on their targets before calling it done.

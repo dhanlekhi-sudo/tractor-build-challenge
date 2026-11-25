@@ -129,17 +129,34 @@ function bindCountUps() {
   });
 }
 
+function storeSwitcherHTML(currentLabel) {
+  const items = [{ route: 'overview', label: 'Overview — Head Office' }]
+    .concat(STORES.map(s => ({ route: `store-${s.id}`, label: s.name, flagged: isFlagged(s) })));
+  const currentRoute = CURRENT.name === 'overview' ? 'overview' : `store-${CURRENT.id}`;
+  return `<div class="store-switcher">
+    <button class="store-switcher__btn" id="store-switcher-btn" aria-haspopup="listbox">
+      <span>${currentLabel}</span><span class="chev">▾</span>
+    </button>
+    <div class="store-switcher__menu" id="store-switcher-menu" hidden>
+      ${items.map(it => `<div class="store-switcher__item ${it.route === currentRoute ? 'active' : ''}" data-switch-route="${it.route}">
+        ${it.label}${it.flagged ? '<span class="flag-dot" title="Flagged"></span>' : ''}
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function trendArrow(trend) {
   const map = { up: ['▲', 'up'], down: ['▼', 'down'], flat: ['→', 'flat'] };
   const [glyph, cls] = map[trend] || map.flat;
   return `<span class="trend-arrow ${cls}" title="${trend}">${glyph}</span>`;
 }
 
-function rankRowHTML({ rank, name, value, pct, color, badge, trend, drill, drillId }) {
+function rankRowHTML({ rank, name, value, pct, color, badge, badgeVariant, trend, drill, drillId }) {
   const drillAttr = drill ? `data-drill="${drill}" data-drill-id="${drillId}"` : '';
+  const badgeClass = badgeVariant === 'positive' ? 'trend-badge trend-badge--positive' : 'trend-badge';
   return `<div class="rank-row" ${drillAttr}>
     <div class="rank-num">${rank}</div>
-    <div class="rank-name"><span class="dot" style="background:${color}"></span>${name}${badge ? `<span class="trend-badge">${badge}</span>` : ''}${trend ? trendArrow(trend) : ''}</div>
+    <div class="rank-name"><span class="dot" style="background:${color}"></span>${name}${badge ? `<span class="${badgeClass}">${badge}</span>` : ''}${trend ? trendArrow(trend) : ''}</div>
     <div class="rank-track"><div class="rank-fill" data-pct="${pct}" style="background:${color}"></div></div>
     <div class="rank-value">${value}</div>
   </div>`;
@@ -444,7 +461,10 @@ function renderOverview() {
   page.innerHTML = `
     <div class="dash-header">
       <div><div class="eyebrow eyebrow--sage">Head office</div><h1>All stores, one order book.</h1></div>
-      <div class="updated">Last updated · ${latest.label} 2026</div>
+      <div class="dash-header__right">
+        ${storeSwitcherHTML('Overview — Head Office')}
+        <div class="updated">Last updated · ${latest.label} 2026</div>
+      </div>
     </div>
 
     <div class="kpi-row">
@@ -452,6 +472,11 @@ function renderOverview() {
       ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: monthsAgg.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders · trending ' + topDish.trend, noDelta: true })}
       ${statTile({ id: 'kpi-flags', label: 'Stores flagged', value: `${flaggedCount} of ${storesRanked.length}`, sub: flaggedCount ? 'Needs attention' : 'All steady', noDelta: true, flagged: flaggedCount > 0 })}
+    </div>
+
+    <div class="dash-section" data-tour="store-list">
+      <div class="dash-section__title">Stores, ranked by orders this month</div>
+      <div class="dash-card"><div class="rank-list" id="store-rank-list"></div></div>
     </div>
 
     <div class="dash-section" data-tour="channel-mix">
@@ -464,19 +489,14 @@ function renderOverview() {
       <div class="dash-card chart-wrap"><svg class="linechart" id="trend-chart"></svg><div class="chart-tooltip" id="trend-tooltip"></div></div>
     </div>
 
-    <div class="dash-section" data-tour="store-list">
-      <div class="dash-section__title">Stores, ranked by orders this month</div>
-      <div class="dash-card"><div class="rank-list" id="store-rank-list"></div></div>
-    </div>
-
     <div class="dash-section" data-tour="dish-board">
       <div class="dash-section__title">Top 5 dishes — all stores</div>
       <div class="dash-card"><div class="rank-list" id="dish-rank-list"></div></div>
     </div>
   `;
 
+  drawRankList('store-rank-list', storesRanked.map((s, i) => ({ name: s.name, value: s.total.toLocaleString(), pct: (s.total / storeMax) * 100, color: s.flagged ? 'var(--magenta-600)' : 'var(--sage-700)', badge: s.flagged ? 'Flagged' : (i === 0 ? 'Top store' : null), badgeVariant: s.flagged ? 'accent' : 'positive', drill: 'goto-store', drillId: s.id })));
   drawRankList('channel-mix-list', mix.map(c => ({ name: c.name, value: `${c.pct.toFixed(0)}%`, pct: c.pct, color: channelColor(c.key), drill: 'channel-detail', drillId: c.key })));
-  drawRankList('store-rank-list', storesRanked.map(s => ({ name: s.name, value: s.total.toLocaleString(), pct: (s.total / storeMax) * 100, color: s.flagged ? 'var(--magenta-600)' : 'var(--sage-700)', badge: s.flagged ? 'Flagged' : null, drill: 'goto-store', drillId: s.id })));
   drawRankList('dish-rank-list', dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null, drill: 'dish-detail', drillId: d.name })));
   drawLineChart('trend-chart', 'trend-tooltip', monthsAgg.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
   bindSparklines();
@@ -518,7 +538,10 @@ function renderStore(storeId, tab) {
   page.innerHTML = `
     <div class="dash-header">
       <div><div class="eyebrow eyebrow--sage">${store.address || ''}</div><h1>${store.name}</h1></div>
-      <div class="updated">Last updated · ${latest.label} 2026</div>
+      <div class="dash-header__right">
+        ${storeSwitcherHTML(store.name)}
+        <div class="updated">Last updated · ${latest.label} 2026</div>
+      </div>
     </div>
     <div class="dash-tabs">
       <button class="dash-tab ${tab === 'overview' ? 'active' : ''}" data-store-tab="overview">Overview</button>
@@ -596,11 +619,11 @@ function router() {
 
 const TOUR_STEPS = [
   { selector: '[data-tour="sidebar"]', title: 'Welcome to the admin portal', text: "This is the dashboard Tractor's head office uses to watch every store and every channel in one place. Let's walk through it." },
-  { selector: '[data-tour="nav-overview"]', title: 'Head office vs. each store', text: 'Overview rolls up every store. Below it, each store has its own dashboard — same layout, scoped to just that location.' },
+  { selector: '.store-switcher', title: 'Switch restaurants anytime', text: 'This dropdown jumps straight to any store, or back to the head-office Overview — from wherever you are on the site.' },
   { selector: '[data-tour="kpi-0"]', title: 'Every number opens up', text: "These tiles aren't static — click any one and it opens a deeper breakdown of what's behind the number." },
+  { selector: '[data-tour="store-list"]', title: 'Restaurants, ranked', text: 'Every store ranked by orders this month, worst-to-best at a glance — click one to jump into its own dashboard.' },
   { selector: '[data-tour="channel-mix"]', title: 'Ranked, not charted', text: 'Channels are ranked by volume instead of a pie chart — faster to see who needs attention. Every bar here is clickable too.' },
   { selector: '[data-tour="trend-chart"]', title: 'The trend, at a glance', text: 'Hover anywhere on the line to see the exact order count for that month.' },
-  { selector: '[data-tour="store-list"]', title: 'Jump into any store', text: 'Click a store here to switch straight into its own dashboard.' },
   { selector: '[data-tour="dish-board"]', title: "What's trending on the menu", text: 'The top dishes across every store, ranked — click one to see which stores are driving it.' },
   { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open any store's Orders tab to see the order book itself, one order at a time. Replay this tour anytime from here." },
 ];
@@ -638,7 +661,8 @@ async function showTourStep(i) {
 
   let cardLeft = rect.right + 24;
   let cardTop = rect.top;
-  if (cardLeft + 320 > window.innerWidth) { cardLeft = Math.max(16, rect.left); cardTop = rect.bottom + 20; }
+  if (cardLeft + 320 > window.innerWidth) { cardLeft = rect.left; cardTop = rect.bottom + 20; }
+  cardLeft = Math.max(16, Math.min(cardLeft, window.innerWidth - 336));
   if (cardTop + 190 > window.innerHeight) { cardTop = window.innerHeight - 210; }
   card.style.left = cardLeft + 'px';
   card.style.top = Math.max(16, cardTop) + 'px';
@@ -679,7 +703,22 @@ async function boot() {
       chip.classList.add('active');
       const val = chip.dataset.filter;
       document.querySelectorAll('#orders-tbody tr').forEach(tr => { tr.style.display = (val === 'All' || tr.dataset.source === val) ? '' : 'none'; });
+      return;
     }
+
+    const switcherBtn = e.target.closest('#store-switcher-btn');
+    if (switcherBtn) {
+      const menu = document.getElementById('store-switcher-menu');
+      menu.hidden = !menu.hidden;
+      return;
+    }
+
+    const switcherItem = e.target.closest('.store-switcher__item[data-switch-route]');
+    if (switcherItem) { location.hash = '#' + switcherItem.dataset.switchRoute; return; }
+
+    // clicked elsewhere on the page — close the dropdown if it's open
+    const openMenu = document.getElementById('store-switcher-menu');
+    if (openMenu && !openMenu.hidden) openMenu.hidden = true;
   });
 
   document.getElementById('dash-nav').addEventListener('click', (e) => {

@@ -1,11 +1,13 @@
 # Tractor Build Challenge
 
-Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge, and a working
-prototype of the product it proposes. Two static pages: `index.html` is the
-submission itself as an interactive, diagram-first system map; `dashboard.html`
-is the head-office admin portal the submission argues for — one order-book
-rollup, a dashboard per store, drillable KPIs, a guided tour. No backend: this
-is a portfolio/interview artifact, not a live Tractor system.
+Dhananjai Lekhi's submission for Tractor's 2026 Build Challenge — a single
+static page (`index.html`) that is the head-office admin portal itself: one
+order-book rollup, a dashboard per store (switch via the header dropdown or
+sidebar), drillable KPIs, a ranked store leaderboard, a guided tour. There was
+previously a separate diagram-first "submission" page; it was removed in
+favor of just shipping the product. No backend: this is a portfolio/interview
+artifact, not a live Tractor system. `dashboard.html` still exists only as a
+redirect stub to `./`, for any link shared before the merge.
 
 ## Stack
 - Plain HTML / CSS / vanilla JS. No framework, no build step, on purpose —

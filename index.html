@@ -3,182 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>One Order Book, Every Channel — Tractor Build Challenge</title>
-<meta name="description" content="Dhananjai Lekhi's Tractor Build Challenge submission, as an interactive system map.">
+<title>Tractor Head Office — Admin Portal</title>
+<meta name="description" content="Tractor's head-office dashboard: orders, channel mix and menu trends, built on one order book. Build Challenge 2026 submission by Dhananjai Lekhi.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="dashboard.css">
 </head>
-<body>
+<body class="is-dashboard">
 
-<div class="topbar">
-  <div class="topbar__brand"><b>TRACTOR</b> · BUILD CHALLENGE 2026</div>
-  <div class="topbar__links">
-    <a href="dashboard.html" class="topbar__cta">Open Dashboard ↗</a>
-    <a href="#diagram">System</a>
-    <a href="#metrics">Metrics</a>
-    <a href="#about">About</a>
-  </div>
+<div class="dash">
+  <aside class="dash-sidebar" data-tour="sidebar">
+    <div class="dash-sidebar__brand">TRACTOR<span>Head Office · Admin Portal</span></div>
+    <nav class="dash-nav" id="dash-nav">
+      <button class="dash-nav__item" data-route="overview" data-tour="nav-overview">Overview</button>
+      <div class="dash-nav__label">Stores</div>
+      <!-- store nav items are injected by dashboard.js once data loads -->
+    </nav>
+    <button class="dash-tour-btn" id="start-tour" data-tour="tour-btn">▶ Take the tour</button>
+    <a class="dash-sidebar__back" href="https://github.com/dhanlekhi-sudo/tractor-build-challenge" target="_blank" rel="noopener">View source ↗</a>
+  </aside>
+
+  <main class="dash-main" id="dash-main" data-tour="main">
+    <div class="dash-page" id="dash-page">
+      <p style="font-family: var(--mono); color: var(--ink-400); font-size:0.8rem;">Loading order book…</p>
+    </div>
+  </main>
 </div>
 
-<header class="hero">
-  <div class="hero__grid"></div>
-  <div class="hero__inner">
-    <div class="eyebrow eyebrow--pink hero__eyebrow">Build Challenge 2026 · Submission</div>
-    <h1>One order book.<br>Every channel.</h1>
-    <p class="lede">One order book for DoorDash, Uber Eats and Tractor's own channels — then a team of AI insight agents on top of it watching speed, money and marketing for every store. Click anything below to see how a piece actually works.</p>
-    <div class="hero__meta">
-      <div class="hero__byline">Dhananjai Lekhi<span>Vancouver, BC · dhan.lekhi@gmail.com</span></div>
-      <div class="pill-row">
-        <span class="pill pill--active">Assessment</span>
-        <span class="pill">Design</span>
-        <span class="pill">90 Day Plan</span>
-        <span class="pill">Insights Agents</span>
-        <span class="pill">One Idea</span>
-      </div>
-    </div>
-    <a href="dashboard.html" class="hero-cta">Open the Head Office Dashboard →</a>
-  </div>
-</header>
-
-<main>
-
-  <section class="section" id="diagram">
-    <div class="section__head">
-      <div class="eyebrow eyebrow--sage">The whole system</div>
-      <h2>One order book in the middle. Everything else is a plug.</h2>
-      <p>Seven channels feed four adapters into one order book, which drives five outputs. Click any box to open how that piece works.</p>
-    </div>
-
-    <div id="diagram-wrap">
-      <div class="diagram" id="diagram-grid">
-        <svg class="connectors" id="connectors"></svg>
-
-        <div class="col" data-col="channels">
-          <div class="col__label">Channels</div>
-          <div class="node node--built" id="ch-counter" data-panel="channels">
-            <div class="node__title">Front counter</div>
-            <span class="node__tag">Built</span>
-            <span class="node__hint">Click →</span>
-          </div>
-          <div class="node node--built" id="ch-kiosk" data-panel="channels">
-            <div class="node__title">Kiosk</div>
-            <span class="node__tag">Built</span>
-          </div>
-          <div class="node node--built" id="ch-catering" data-panel="channels">
-            <div class="node__title">Catering</div>
-            <span class="node__tag">Live</span>
-          </div>
-          <div class="node node--built" id="ch-pickup" data-panel="channels">
-            <div class="node__title">Website pickup</div>
-            <span class="node__tag">Designed</span>
-          </div>
-          <div class="node node--solve" id="ch-delivery" data-panel="channels">
-            <div class="node__title">Website delivery</div>
-            <span class="node__tag">Driver to choose</span>
-          </div>
-          <div class="node node--solve" id="ch-doordash" data-panel="channels">
-            <div class="node__title">DoorDash</div>
-            <span class="node__tag">To solve</span>
-          </div>
-          <div class="node node--solve" id="ch-ubereats" data-panel="channels">
-            <div class="node__title">Uber Eats</div>
-            <span class="node__tag">To solve</span>
-          </div>
-        </div>
-
-        <div class="col" data-col="adapters" style="justify-content: space-evenly;">
-          <div class="col__label">Adapters</div>
-          <div class="node" id="node-adapter-generic" data-panel="channels">
-            <div class="node__title">One adapter per channel</div>
-            <span class="node__tag">Normalise · dedupe · ack fast</span>
-          </div>
-          <div class="node" id="node-adapter-quote" data-panel="channels">
-            <div class="node__title">Quote &amp; dispatch</div>
-            <span class="node__tag">Provider is a setting</span>
-          </div>
-          <div class="node node--solve" id="node-adapter-doordash" data-panel="channels">
-            <div class="node__title">DoorDash</div>
-            <span class="node__tag">v1 aggregator → v2 direct</span>
-          </div>
-          <div class="node node--solve" id="node-adapter-ubereats" data-panel="channels">
-            <div class="node__title">Uber Eats</div>
-            <span class="node__tag">v1 aggregator → v2 direct</span>
-          </div>
-        </div>
-
-        <div class="col" data-col="orderbook">
-          <div class="col__label">Order Book</div>
-          <div class="node node--hub" id="node-orderbook" data-panel="orderbook">
-            <div class="node__title">One order book</div>
-            <div class="node__sub">Received → Accepted → Printed<br>In prep → Ready → Handed off → Settled</div>
-          </div>
-        </div>
-
-        <div class="col" data-col="outputs">
-          <div class="col__label">Outputs</div>
-          <div class="node node--output" id="node-kitchen" data-panel="kitchen">
-            <div class="node__title">Kitchen tickets</div>
-            <span class="node__tag">Two printers, colour by channel</span>
-          </div>
-          <div class="node node--output" id="node-dispatch" data-panel="kitchen">
-            <div class="node__title">Dispatch</div>
-            <span class="node__tag">Uber Direct · DoorDash Drive</span>
-          </div>
-          <div class="node node--output" id="node-money" data-panel="money">
-            <div class="node__title">Money</div>
-            <span class="node__tag">Payout Auditor</span>
-          </div>
-          <div class="node node--output" id="node-metrics" data-panel="metrics">
-            <div class="node__title">Metrics</div>
-            <span class="node__tag">Store scorecards, insight agents</span>
-          </div>
-          <div class="node node--output" id="node-guests" data-panel="guests">
-            <div class="node__title">Guest accounts</div>
-            <span class="node__tag">History, rewards later</span>
-          </div>
-        </div>
-      </div>
-      <div class="diagram-caption">Solid border = built today · dashed magenta = still to solve</div>
-    </div>
-  </section>
-
-</main>
-
-<footer class="footer" id="about">
-  <div class="footer__inner">
-    <div>
-      <h5>How I build</h5>
-      <p>Read first, build beside the live system, shadow before go-live, one store at a time. Money is tested code; AI only explains and drafts.</p>
-    </div>
-    <div>
-      <h5>My taste</h5>
-      <p>One question per screen. Rank, don't chart. Many tools that feel like one product — this page follows the same rule as the deck.</p>
-    </div>
-    <div>
-      <h5>Commitment</h5>
-      <p>Vancouver, BC. Onsite 2+ days a week, more in go-live weeks. Ready December 1, 2026.</p>
-    </div>
-    <div class="legal">Tractor Build Challenge 2026 · Dhananjai Lekhi · dhan.lekhi@gmail.com · All figures in this submission are plans or illustrations, not measured Tractor data.</div>
-  </div>
-</footer>
-
-<!-- ===== overlay / detail panel ===== -->
-<div class="overlay" id="overlay">
-  <div class="overlay__backdrop" id="overlay-backdrop"></div>
-  <div class="panel" id="panel">
-    <div class="panel__header">
+<!-- KPI / rank-row drill-down overlay, reused for every level -->
+<div class="drill-overlay" id="drill-overlay">
+  <div class="drill-overlay__backdrop" id="drill-backdrop"></div>
+  <div class="drill-panel" id="drill-panel">
+    <div class="drill-panel__header">
       <div>
-        <div class="eyebrow eyebrow--pink" id="panel-eyebrow">Detail</div>
-        <h3 id="panel-title">Title</h3>
+        <button class="drill-back" id="drill-back" hidden>← Back</button>
+        <h4 id="drill-title">Detail</h4>
       </div>
-      <button class="panel__close" id="panel-close" aria-label="Close">×</button>
+      <button class="drill-close" id="drill-close" aria-label="Close">×</button>
     </div>
-    <div class="panel__body" id="panel-body"></div>
+    <div class="drill-panel__body" id="drill-body"></div>
   </div>
 </div>
 
-<script src="script.js"></script>
+<!-- guided tour -->
+<div class="tour-layer" id="tour-layer" hidden>
+  <div class="tour-spotlight" id="tour-spotlight"></div>
+  <div class="tour-cursor" id="tour-cursor"></div>
+  <div class="tour-card" id="tour-card">
+    <div class="tour-card__eyebrow" id="tour-step-count">Step 1 of 8</div>
+    <h4 id="tour-title">Title</h4>
+    <p id="tour-text">Text</p>
+    <div class="tour-card__actions">
+      <button id="tour-skip">Skip tour</button>
+      <button id="tour-next">Next →</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<script src="dashboard.js"></script>
 </body>
 </html>

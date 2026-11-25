@@ -1,6 +1,6 @@
 ---
 name: design-system
-description: The design and motion specification for the Tractor Build Challenge site (index.html + dashboard.html). Use when building or modifying any UI screen, component, chart, or transition, and when reviewing screenshots for design quality.
+description: The design and motion specification for the Tractor Build Challenge dashboard (index.html, dashboard.css, dashboard.js). Use when building or modifying any UI screen, component, chart, or transition, and when reviewing screenshots for design quality.
 ---
 
 # Design & Motion System — Tractor Build Challenge
@@ -54,7 +54,7 @@ description: The design and motion specification for the Tractor Build Challenge
    sparkline does not re-animate on hover.
 4. **Drill-down panel** — ✅ implemented (`.drill-panel` scale+fade, `--ease`).
 5. **Skeletons** — not implemented. The dashboard's first paint shows a plain
-   "Loading order book…" line (see `dashboard.html`) rather than a skeleton
+   "Loading order book…" line (see `index.html`) rather than a skeleton
    matching the final layout. Acceptable for now because the fetch of four
    small local `.md` files is near-instant; revisit if data loading ever
    becomes slow enough to be visible.
