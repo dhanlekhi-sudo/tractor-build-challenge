@@ -5,14 +5,20 @@ prototype of the head-office admin portal the submission proposes.
 
 **Live: [dhanlekhi-sudo.github.io/tractor-build-challenge →](https://dhanlekhi-sudo.github.io/tractor-build-challenge/)**
 
-One order-book rollup across all stores, a dashboard per store (switch with
-the dropdown in the header or the sidebar), drillable KPIs, a ranked store
-leaderboard, and a guided tour (click **Take the tour** in the sidebar).
-Total orders by channel (DoorDash / Uber Eats / in-store / website), monthly
-trends, foot traffic, a top-5 trending-dish leaderboard, and — per store — a
-**Printers** tab: printer status (including a jammed state that reroutes the
-print queue), and a kitchen-screen preview of the actual order tickets. All
-of it computed live from the order-book data files, nothing hardcoded twice.
+An opening screen states the assumptions up front — this is a draft prototype
+on mock data, no real database, no production hosting or domain. After that,
+every screen is a grid of square, clickable tiles — nothing to scroll through.
+Click any tile and its full detail opens in an overlay: a ranked list, a
+trend chart, a stacked "channel mix over time" bar chart, and (on every
+drill) a **"View the orders behind this"** toggle showing the actual
+order-book rows that number is built from. One order-book rollup across all
+stores, a dashboard per store (switch with the dropdown in the header or the
+sidebar), a ranked store leaderboard, foot traffic, a top-5 trending-dish
+leaderboard, a guided tour (click **Take the tour** in the sidebar), and — per
+store — a **Printers** tab: printer status (including a jammed state that
+reroutes the print queue) and a kitchen-screen preview of the actual order
+tickets. All of it computed live from the order-book data files, nothing
+hardcoded twice.
 
 No build step, no framework — plain HTML/CSS/JS, deployable as-is to GitHub
 Pages.
@@ -86,8 +92,9 @@ To add a **fifth store**: copy one of the four files, change `id`/`name`/`addres
 
 - **`index.html` / `dashboard.css` / `dashboard.js`** — the whole app (the HTML file keeps the name `index.html` so it serves at the site root; everything in it is the dashboard). `dashboard.css` imports `style.css` for the shared brand tokens (colors, type). `dashboard.html` is kept only as a redirect, in case that URL was shared anywhere before the site became a single page.
 - Routing is a plain hash router (`#overview`, `#store-01`, `#store-01/orders`) — shareable, bookmarkable, no framework.
-- Every KPI tile and every ranked-bar row is clickable and opens the drill-down overlay (`openDrill` / `pushDrill` in `dashboard.js`) — the same overlay supports multiple levels deep, with a "← Back" to step up one level.
-- Channel colors (`--ch-doordash`, `--ch-ubereats`, `--ch-instore`, `--ch-website` in `style.css`) are a validated color-blind-safe set — see the `dataviz` skill's `scripts/validate_palette.js` if you ever change them; re-validate before shipping a new set.
+- Every KPI tile and every ranked-bar row is clickable and opens the drill-down overlay (`openDrill` / `pushDrill` in `dashboard.js`) — the same overlay supports multiple levels deep, with a "← Back" to step up one level, and an `afterRender` hook so a drill can draw its own chart once its markup is in the DOM.
+- `sourceOrdersHTML()` appends a collapsible "View the orders behind this" table to a drill, built from the same `recent_orders` the Orders tab uses (`ordersForStore`/`ordersForChannel`/`ordersForDish` filter it) — the point is that nothing on this dashboard is a number with no receipt behind it.
+- Channel colors (`--ch-doordash`, `--ch-ubereats`, `--ch-instore`, `--ch-website` in `style.css`) are a validated color-blind-safe set — see the `dataviz` skill's `scripts/validate_palette.js` if you ever change them; re-validate before shipping a new set. `drawStackedBarChart` reuses them for the "channel mix over time" chart inside the Online Share / Channel Mix drills.
 - The guided tour (`TOUR_STEPS` in `dashboard.js`) is a plain array of `{selector, title, text}` — add a step by adding an entry; it'll scroll to and spotlight whatever element the selector matches.
 
 ## Deploying

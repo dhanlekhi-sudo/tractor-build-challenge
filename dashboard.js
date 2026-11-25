@@ -35,10 +35,11 @@ function pctDelta(curr, prev) { return prev ? ((curr - prev) / prev) * 100 : 0; 
 function aggregateMonths(stores) {
   const labels = stores[0].months.map(m => m.label);
   return labels.map((label, i) => {
-    const agg = { label, doordash: 0, ubereats: 0, instore: 0, website: 0 };
+    const agg = { label, doordash: 0, ubereats: 0, instore: 0, website: 0, visits: 0 };
     stores.forEach(s => {
       const m = s.months[i];
       agg.doordash += m.doordash; agg.ubereats += m.ubereats; agg.instore += m.instore; agg.website += m.website;
+      agg.visits += (m.visits || 0);
     });
     return agg;
   });
@@ -270,6 +271,80 @@ function drawLineChart(svgId, tooltipId, data, color) {
   wrap.onmouseleave = () => { hoverLine.setAttribute('opacity', 0); if (tooltip) tooltip.classList.remove('show'); };
 }
 
+const STACK_ORDER = ['instore', 'doordash', 'ubereats', 'website'];
+
+function channelLegendHTML() {
+  const names = { instore: 'In-store', doordash: 'DoorDash', ubereats: 'Uber Eats', website: 'Website / app' };
+  return `<div class="chart-legend">${STACK_ORDER.map(k => `<span><i style="background:${channelColor(k)}"></i>${names[k]}</span>`).join('')}</div>`;
+}
+
+function drawStackedBarChart(svgId, tooltipId, months) {
+  const svg = document.getElementById(svgId);
+  const tooltip = document.getElementById(tooltipId);
+  if (!svg) return;
+  const wrap = svg.parentElement;
+  const W = wrap.clientWidth || 600, H = 220;
+  const padL = 46, padR = 20, padT = 16, padB = 28;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const totals = months.map(m => monthTotal(m));
+  const max = Math.max(...totals) * 1.1 || 1;
+  const n = months.length;
+  const slot = plotW / n;
+  const barW = Math.min(28, slot * 0.5);
+  const gap = 2;
+
+  let gridSvg = '';
+  for (let g = 0; g <= 4; g++) {
+    const y = padT + plotH - (g / 4) * plotH;
+    gridSvg += `<line class="grid-line" x1="${padL}" x2="${padL + plotW}" y1="${y}" y2="${y}"/>`;
+    gridSvg += `<text class="axis-label" x="${padL - 8}" y="${y + 3}" text-anchor="end">${compactNum(Math.round((g / 4) * max))}</text>`;
+  }
+
+  let barsSvg = '';
+  const barMeta = [];
+  months.forEach((m, i) => {
+    const cx = padL + slot * i + slot / 2;
+    const x = cx - barW / 2;
+    let yCursor = padT + plotH;
+    STACK_ORDER.forEach((key, segIdx) => {
+      const val = m[key] || 0;
+      const segH = (val / max) * plotH;
+      const isTop = segIdx === STACK_ORDER.length - 1;
+      const drawH = Math.max(0, segH - (segIdx < STACK_ORDER.length - 1 ? gap : 0));
+      const topY = yCursor - segH;
+      barsSvg += `<rect x="${x.toFixed(1)}" y="${topY.toFixed(1)}" width="${barW}" height="${drawH.toFixed(1)}" fill="${channelColor(key)}" ${isTop ? 'rx="4" ry="4"' : ''}/>`;
+      yCursor = topY;
+    });
+    barMeta.push({ cx, month: m });
+  });
+
+  const axisLabels = months.map((m, i) => `<text class="axis-label" x="${padL + slot * i + slot / 2}" y="${padT + plotH + 18}" text-anchor="middle">${m.label}</text>`).join('');
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = `${gridSvg}<g id="${svgId}-bars">${barsSvg}</g>${axisLabels}`;
+
+  const barsGroup = document.getElementById(`${svgId}-bars`);
+  if (barsGroup && !prefersReducedMotion()) {
+    barsGroup.style.transformOrigin = `0px ${(padT + plotH)}px`;
+    barsGroup.style.transform = 'scaleY(0)';
+    barsGroup.style.transition = 'transform 0.6s var(--ease)';
+    requestAnimationFrame(() => { barsGroup.style.transform = 'scaleY(1)'; });
+  }
+
+  wrap.onmousemove = (e) => {
+    const rect = wrap.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    const meta = barMeta.reduce((best, b) => Math.abs(b.cx - x) < Math.abs(best.cx - x) ? b : best, barMeta[0]);
+    if (!meta || !tooltip) return;
+    const m = meta.month;
+    tooltip.innerHTML = `${m.label} · In-store ${m.instore} · DoorDash ${m.doordash} · Uber Eats ${m.ubereats} · Website ${m.website}`;
+    tooltip.style.left = (meta.cx / W) * rect.width + 'px';
+    tooltip.style.top = (padT / H) * rect.height + 'px';
+    tooltip.classList.add('show');
+  };
+  wrap.onmouseleave = () => { if (tooltip) tooltip.classList.remove('show'); };
+}
+
 /* ---------------- drill-down overlay (KPIs go deeper) ---------------- */
 
 function positionDrillOrigin(evt) {
@@ -285,6 +360,7 @@ function setDrillContent(content) {
   document.getElementById('drill-body').scrollTop = 0;
   requestAnimationFrame(() => {
     document.querySelectorAll('#drill-body .rank-fill').forEach(f => { f.style.width = f.dataset.pct + '%'; });
+    if (content.afterRender) content.afterRender();
   });
 }
 
@@ -314,26 +390,43 @@ function closeDrill() { document.getElementById('drill-overlay').classList.remov
 /* ---- drill content builders — everything below reads from STORES ---- */
 
 function drillStoreList() {
+  const monthsAgg = aggregateMonths(STORES);
   const ranked = storeComparison(STORES);
   const max = ranked[0].total || 1;
-  const html = `<div class="rank-list">${ranked.map((s, i) => rankRowHTML({
+  const html = `
+  <div class="section-label">Monthly trend — all stores</div>
+  <div class="chart-wrap" style="margin-bottom:24px;"><svg class="linechart" id="drill-store-trend-chart"></svg><div class="chart-tooltip" id="drill-store-trend-tooltip"></div></div>
+  <div class="section-label">Ranked by orders this month</div>
+  <div class="rank-list">${ranked.map((s, i) => rankRowHTML({
     rank: i + 1, name: s.name, value: s.total.toLocaleString(), pct: (s.total / max) * 100,
     color: s.flagged ? 'var(--magenta-600)' : 'var(--sage-700)', badge: s.flagged ? 'Flagged' : null,
     drill: 'store-detail', drillId: s.id,
   })).join('')}</div>
-  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a store to see its channel split, then open its full dashboard.</p>`;
-  return { title: 'Orders by store, this month', html };
+  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a store to see its channel split, then open its full dashboard.</p>
+  ${sourceOrdersHTML(allOrdersWithStore())}`;
+  return {
+    title: 'Orders by store, this month', html,
+    afterRender: () => drawLineChart('drill-store-trend-chart', 'drill-store-trend-tooltip', monthsAgg.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)'),
+  };
 }
 
 function drillChannelMix() {
-  const latest = aggregateMonths(STORES).slice(-1)[0];
+  const monthsAgg = aggregateMonths(STORES);
+  const latest = monthsAgg[monthsAgg.length - 1];
   const mix = channelMix(latest);
   const html = `<div class="rank-list">${mix.map((c, i) => rankRowHTML({
     rank: i + 1, name: c.name, value: `${c.pct.toFixed(0)}% · ${c.value.toLocaleString()}`, pct: c.pct,
     color: channelColor(c.key), drill: 'channel-detail', drillId: c.key,
   })).join('')}</div>
-  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a channel to see it broken down by store.</p>`;
-  return { title: `Channel mix, ${latest.label}`, html };
+  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a channel to see it broken down by store.</p>
+  <div class="section-label section-label--tech">Mix over time</div>
+  ${channelLegendHTML()}
+  <div class="chart-wrap"><svg class="linechart" id="drill-channel-stack-chart"></svg><div class="chart-tooltip" id="drill-channel-stack-tooltip"></div></div>
+  ${sourceOrdersHTML(allOrdersWithStore())}`;
+  return {
+    title: `Channel mix, ${latest.label}`, html,
+    afterRender: () => drawStackedBarChart('drill-channel-stack-chart', 'drill-channel-stack-tooltip', monthsAgg),
+  };
 }
 
 function drillChannelByStore(channelKey) {
@@ -346,7 +439,8 @@ function drillChannelByStore(channelKey) {
   const html = `<div class="rank-list">${rows.map((r, i) => rankRowHTML({
     rank: i + 1, name: r.name, value: r.value.toLocaleString(), pct: (r.value / max) * 100,
     color: channelColor(channelKey), drill: 'goto-store', drillId: r.id,
-  })).join('')}</div>`;
+  })).join('')}</div>
+  ${sourceOrdersHTML(ordersForChannel(channelKey))}`;
   return { title: `${names[channelKey]} — by store`, html };
 }
 
@@ -357,7 +451,8 @@ function drillDishBoard() {
     rank: i + 1, name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / max) * 100, color: 'var(--sage-700)',
     trend: d.trend, badge: i === 0 ? 'Trending' : null, drill: 'dish-detail', drillId: d.name,
   })).join('')}</div>
-  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a dish to see which stores are selling it.</p>`;
+  <p style="margin-top:16px;color:var(--ink-600);font-size:0.85rem;">Click a dish to see which stores are selling it.</p>
+  ${sourceOrdersHTML(allOrdersWithStore())}`;
   return { title: 'Top 5 dishes, all stores', html };
 }
 
@@ -370,7 +465,8 @@ function drillDishByStore(dishName) {
   const html = `<div class="rank-list">${rows.map((r, i) => rankRowHTML({
     rank: i + 1, name: r.name, value: r.value.toLocaleString(), pct: (r.value / max) * 100, color: 'var(--sage-700)',
     trend: r.trend, drill: 'goto-store', drillId: r.id,
-  })).join('')}</div>`;
+  })).join('')}</div>
+  ${sourceOrdersHTML(ordersForDish(dishName))}`;
   return { title: `${dishName} — by store`, html };
 }
 
@@ -383,8 +479,27 @@ function drillFlags() {
       <span><b>${s.name}</b> — ${s.flagged ? '<span style="color:var(--magenta-600);">Flagged</span>' : 'Steady'}</span>
     </div>
     <p style="margin:-2px 0 10px 2px;color:var(--ink-400);font-size:0.78rem;">${escapeHTML(note)}</p>`;
-  }).join('');
+  }).join('') + sourceOrdersHTML(allOrdersWithStore());
   return { title: 'Which stores need attention', html };
+}
+
+function drillTrafficTrend() {
+  const monthsAgg = aggregateMonths(STORES);
+  const latest = monthsAgg[monthsAgg.length - 1];
+  const rows = STORES.map(s => ({ name: s.name, id: s.id, value: s.months[s.months.length - 1].visits || 0 })).sort((a, b) => b.value - a.value);
+  const max = rows[0].value || 1;
+  const html = `
+  <div class="section-label">Monthly trend — all stores</div>
+  <div class="chart-wrap" style="margin-bottom:24px;"><svg class="linechart" id="drill-traffic-chart"></svg><div class="chart-tooltip" id="drill-traffic-tooltip"></div></div>
+  <div class="section-label">By store, ${latest.label}</div>
+  <div class="rank-list">${rows.map((r, i) => rankRowHTML({
+    rank: i + 1, name: r.name, value: r.value.toLocaleString(), pct: (r.value / max) * 100, color: 'var(--ch-instore)',
+    drill: 'goto-store', drillId: r.id,
+  })).join('')}</div>`;
+  return {
+    title: `Foot traffic, ${latest.label}`, html,
+    afterRender: () => drawLineChart('drill-traffic-chart', 'drill-traffic-tooltip', monthsAgg.map(m => ({ label: m.label, value: m.visits || 0 })), 'var(--ch-instore)'),
+  };
 }
 
 function drillStoreChannelsContent(store, opts = {}) {
@@ -393,14 +508,27 @@ function drillStoreChannelsContent(store, opts = {}) {
   const linkHtml = opts.showLink === false ? '' : `<div class="drill-link-row" data-drill="goto-store" data-drill-id="${store.id}" style="margin-top:18px;"><span>Open ${store.name}'s full dashboard</span><span>→</span></div>`;
   const html = `<div class="rank-list">${mix.map((c, i) => rankRowHTML({
     rank: i + 1, name: c.name, value: `${c.pct.toFixed(0)}%`, pct: c.pct, color: channelColor(c.key),
-  })).join('')}</div>${linkHtml}`;
-  return { title: `${store.name} — channel split, ${latest.label}`, html };
+  })).join('')}</div>${linkHtml}
+  <div class="section-label section-label--tech">Mix over time</div>
+  ${channelLegendHTML()}
+  <div class="chart-wrap"><svg class="linechart" id="drill-store-stack-chart"></svg><div class="chart-tooltip" id="drill-store-stack-tooltip"></div></div>
+  ${sourceOrdersHTML(ordersForStore(store))}`;
+  return {
+    title: `${store.name} — channel split, ${latest.label}`, html,
+    afterRender: () => drawStackedBarChart('drill-store-stack-chart', 'drill-store-stack-tooltip', store.months),
+  };
 }
 
 function drillStoreMonths(store) {
   const rows = store.months.map(m => `<tr><td>${m.label}</td><td>${m.doordash}</td><td>${m.ubereats}</td><td>${m.instore}</td><td>${m.website}</td><td><b>${monthTotal(m).toLocaleString()}</b></td><td>${(m.visits || 0).toLocaleString()}</td></tr>`).join('');
-  const html = `<table class="data"><thead><tr><th>Month</th><th>DoorDash</th><th>Uber Eats</th><th>In-store</th><th>Website</th><th>Total orders</th><th>Foot traffic</th></tr></thead><tbody>${rows}</tbody></table>`;
-  return { title: `${store.name} — orders by month`, html };
+  const html = `
+  <div class="chart-wrap" style="margin-bottom:24px;"><svg class="linechart" id="drill-store-months-chart"></svg><div class="chart-tooltip" id="drill-store-months-tooltip"></div></div>
+  <table class="data"><thead><tr><th>Month</th><th>DoorDash</th><th>Uber Eats</th><th>In-store</th><th>Website</th><th>Total orders</th><th>Foot traffic</th></tr></thead><tbody>${rows}</tbody></table>
+  ${sourceOrdersHTML(ordersForStore(store))}`;
+  return {
+    title: `${store.name} — orders by month`, html,
+    afterRender: () => drawLineChart('drill-store-months-chart', 'drill-store-months-tooltip', store.months.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)'),
+  };
 }
 
 function drillStoreDishes(store) {
@@ -408,7 +536,8 @@ function drillStoreDishes(store) {
   const html = `<div class="rank-list">${store.top_dishes.map((d, i) => rankRowHTML({
     rank: i + 1, name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / max) * 100, color: 'var(--sage-700)',
     trend: d.trend, badge: i === 0 ? 'Trending' : null,
-  })).join('')}</div>`;
+  })).join('')}</div>
+  ${sourceOrdersHTML(ordersForStore(store))}`;
   return { title: `${store.name} — top dishes`, html };
 }
 
@@ -418,6 +547,7 @@ function handleKpiClick(kpiId, evt) {
     else if (kpiId === 'kpi-online') openDrill(drillChannelMix(), evt);
     else if (kpiId === 'kpi-dish') openDrill(drillDishBoard(), evt);
     else if (kpiId === 'kpi-flags') openDrill(drillFlags(), evt);
+    else if (kpiId === 'kpi-traffic') openDrill(drillTrafficTrend(), evt);
   } else {
     const store = STORES.find(s => s.id === CURRENT.id);
     if (kpiId === 'kpi-orders') openDrill(drillStoreMonths(store), evt);
@@ -450,14 +580,14 @@ function renderOverview() {
   const prev = monthsAgg[monthsAgg.length - 2];
   const latestTotal = monthTotal(latest);
   const deltaPct = pctDelta(latestTotal, monthTotal(prev));
-  const mix = channelMix(latest);
   const onlineShare = onlineSharePct(latest);
   const onlineDelta = onlineShare - onlineSharePct(prev);
   const dishes = aggregateDishes(STORES);
   const topDish = dishes[0];
   const storesRanked = storeComparison(STORES);
   const flaggedCount = storesRanked.filter(s => s.flagged).length;
-  const storeMax = storesRanked[0].total || 1;
+  const latestVisits = latest.visits || 0;
+  const visitsDeltaPct = pctDelta(latestVisits, prev.visits || 0);
 
   page.innerHTML = `
     <div class="dash-header">
@@ -468,38 +598,16 @@ function renderOverview() {
       </div>
     </div>
 
-    <div class="kpi-row">
+    <div class="kpi-row" data-tour="kpi-grid">
       ${statTile({ id: 'kpi-orders', tourId: 'kpi-0', label: `Total orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: monthsAgg.map(monthTotal) })}
       ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: monthsAgg.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders · trending ' + topDish.trend, noDelta: true })}
       ${statTile({ id: 'kpi-flags', label: 'Stores flagged', value: `${flaggedCount} of ${storesRanked.length}`, sub: flaggedCount ? 'Needs attention' : 'All steady', noDelta: true, flagged: flaggedCount > 0 })}
+      ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: monthsAgg.map(m => m.visits || 0) })}
     </div>
-
-    <div class="dash-section" data-tour="store-list">
-      <div class="dash-section__title">Stores, ranked by orders this month</div>
-      <div class="dash-card"><div class="rank-list" id="store-rank-list"></div></div>
-    </div>
-
-    <div class="dash-section" data-tour="channel-mix">
-      <div class="dash-section__title">Channel mix — ${latest.label}</div>
-      <div class="dash-card"><div class="rank-list" id="channel-mix-list"></div></div>
-    </div>
-
-    <div class="dash-section" data-tour="trend-chart">
-      <div class="dash-section__title">Monthly order trend — all stores</div>
-      <div class="dash-card chart-wrap"><svg class="linechart" id="trend-chart"></svg><div class="chart-tooltip" id="trend-tooltip"></div></div>
-    </div>
-
-    <div class="dash-section" data-tour="dish-board">
-      <div class="dash-section__title">Top 5 dishes — all stores</div>
-      <div class="dash-card"><div class="rank-list" id="dish-rank-list"></div></div>
-    </div>
+    <p class="tile-hint">Click any tile to go deeper — ranked lists, trend charts, and the order book behind every number.</p>
   `;
 
-  drawRankList('store-rank-list', storesRanked.map((s, i) => ({ name: s.name, value: s.total.toLocaleString(), pct: (s.total / storeMax) * 100, color: s.flagged ? 'var(--magenta-600)' : 'var(--sage-700)', badge: s.flagged ? 'Flagged' : (i === 0 ? 'Top store' : null), badgeVariant: s.flagged ? 'accent' : 'positive', drill: 'goto-store', drillId: s.id })));
-  drawRankList('channel-mix-list', mix.map(c => ({ name: c.name, value: `${c.pct.toFixed(0)}%`, pct: c.pct, color: channelColor(c.key), drill: 'channel-detail', drillId: c.key })));
-  drawRankList('dish-rank-list', dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null, drill: 'dish-detail', drillId: d.name })));
-  drawLineChart('trend-chart', 'trend-tooltip', monthsAgg.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
   bindSparklines();
   bindCountUps();
 }
@@ -523,6 +631,45 @@ function orderRowHTML(o) {
   </tr>`;
 }
 
+/* ---------------- "the data behind this" — every drill can show its source orders ---------------- */
+
+function allOrdersWithStore() {
+  return STORES.flatMap(s => s.recent_orders.map(o => ({ ...o, storeName: s.name })));
+}
+
+function ordersForStore(store) { return store.recent_orders.map(o => ({ ...o, storeName: store.name })); }
+
+function ordersForChannel(channelKey) {
+  const names = { doordash: 'DoorDash', ubereats: 'Uber Eats', instore: 'In-store', website: 'Website' };
+  return allOrdersWithStore().filter(o => o.source === names[channelKey]);
+}
+
+function ordersForDish(dishName) {
+  return allOrdersWithStore().filter(o => o.dish.includes(dishName));
+}
+
+function compactOrderRowHTML(o) {
+  return `<tr>
+    <td>${o.storeName}</td><td>${o.order_no}</td>
+    <td><span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span></td>
+    <td>${o.time}</td><td>${o.dish}</td><td>$${o.total.toFixed(2)}</td>
+  </tr>`;
+}
+
+function sourceOrdersHTML(orders) {
+  if (!orders || !orders.length) return '';
+  const shown = orders.slice(0, 8);
+  const rows = shown.map(compactOrderRowHTML).join('');
+  const more = orders.length > shown.length ? `<p style="margin:8px 0 0;color:var(--ink-400);font-size:0.76rem;">+ ${orders.length - shown.length} more in the order book.</p>` : '';
+  return `<div class="source-toggle">
+    <button class="source-toggle__btn" data-source-toggle>▸ View the orders behind this (${orders.length})</button>
+    <div class="source-toggle__body" hidden>
+      <table class="data"><thead><tr><th>Store</th><th>Order</th><th>Source</th><th>Time</th><th>Dish</th><th>Total</th></tr></thead><tbody>${rows}</tbody></table>
+      ${more}
+    </div>
+  </div>`;
+}
+
 function renderStore(storeId, tab) {
   const store = STORES.find(s => s.id === storeId);
   if (!store) { location.hash = '#overview'; return; }
@@ -531,7 +678,6 @@ function renderStore(storeId, tab) {
   const prev = store.months[store.months.length - 2];
   const latestTotal = monthTotal(latest);
   const deltaPct = pctDelta(latestTotal, monthTotal(prev));
-  const mix = channelMix(latest);
   const onlineShare = onlineSharePct(latest);
   const onlineDelta = onlineShare - onlineSharePct(prev);
   const topDish = store.top_dishes[0];
@@ -572,27 +718,8 @@ function renderStore(storeId, tab) {
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true })}
       ${statTile({ id: 'kpi-traffic', label: `Foot traffic, ${latest.label}`, countTo: latestVisits, countFormat: 'int', deltaPct: visitsDeltaPct, spark: store.months.map(m => m.visits || 0) })}
     </div>
-    <div class="dash-section">
-      <div class="dash-section__title">Channel mix — ${latest.label}</div>
-      <div class="dash-card"><div class="rank-list" id="store-channel-list"></div></div>
-    </div>
-    <div class="dash-section">
-      <div class="dash-section__title">Monthly order trend</div>
-      <div class="dash-card chart-wrap"><svg class="linechart" id="store-trend-chart"></svg><div class="chart-tooltip" id="store-trend-tooltip"></div></div>
-    </div>
-    <div class="dash-section">
-      <div class="dash-section__title">Foot traffic</div>
-      <div class="dash-card chart-wrap"><svg class="linechart" id="store-traffic-chart"></svg><div class="chart-tooltip" id="store-traffic-tooltip"></div></div>
-    </div>
-    <div class="dash-section">
-      <div class="dash-section__title">Top 5 dishes</div>
-      <div class="dash-card"><div class="rank-list" id="store-dish-list"></div></div>
-    </div>
+    <p class="tile-hint">Click any tile to go deeper — the channel split, the trend chart, and the order book behind it.</p>
   `;
-  drawRankList('store-channel-list', mix.map(c => ({ name: c.name, value: `${c.pct.toFixed(0)}%`, pct: c.pct, color: channelColor(c.key) })));
-  drawLineChart('store-trend-chart', 'store-trend-tooltip', store.months.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
-  drawLineChart('store-traffic-chart', 'store-traffic-tooltip', store.months.map(m => ({ label: m.label, value: m.visits || 0 })), 'var(--ch-instore)');
-  drawRankList('store-dish-list', store.top_dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (store.top_dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null })));
   bindSparklines();
   bindCountUps();
 }
@@ -688,14 +815,11 @@ function router() {
 /* ---------------- guided tour ---------------- */
 
 const TOUR_STEPS = [
-  { selector: '[data-tour="sidebar"]', title: 'Welcome to the admin portal', text: "This is the dashboard Tractor's head office uses to watch every store and every channel in one place. Let's walk through it." },
+  { selector: '[data-tour="sidebar"]', title: 'Welcome to the admin portal', text: "This is a draft prototype of the dashboard Tractor's head office would use — built on mock data, with no real database and no production hosting or domain behind it yet. Let's walk through it." },
   { selector: '.store-switcher', title: 'Switch restaurants anytime', text: 'This dropdown jumps straight to any store, or back to the head-office Overview — from wherever you are on the site.' },
-  { selector: '[data-tour="kpi-0"]', title: 'Every number opens up', text: "These tiles aren't static — click any one and it opens a deeper breakdown of what's behind the number." },
-  { selector: '[data-tour="store-list"]', title: 'Restaurants, ranked', text: 'Every store ranked by orders this month, worst-to-best at a glance — click one to jump into its own dashboard.' },
-  { selector: '[data-tour="channel-mix"]', title: 'Ranked, not charted', text: 'Channels are ranked by volume instead of a pie chart — faster to see who needs attention. Every bar here is clickable too.' },
-  { selector: '[data-tour="trend-chart"]', title: 'The trend, at a glance', text: 'Hover anywhere on the line to see the exact order count for that month.' },
-  { selector: '[data-tour="dish-board"]', title: "What's trending on the menu", text: 'The top dishes across every store, ranked — click one to see which stores are driving it.' },
-  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open any store's Orders tab to see the order book itself, one order at a time. Replay this tour anytime from here." },
+  { selector: '[data-tour="kpi-0"]', title: 'Every number opens up', text: "Click any tile and it opens the full ranked list, the trend chart, and the actual order-book rows behind that number — nothing here is just a static label." },
+  { selector: '[data-tour="kpi-grid"]', title: 'Built to fit on one screen', text: 'Every box is clickable and its detail lives one click away in an overlay, so the overview itself never needs scrolling to see everything at a glance.' },
+  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open any store to find its Orders and Printers tabs — the order book and the kitchen screen itself. Replay this tour anytime, and remember: every figure here is illustrative, not real Tractor data." },
 ];
 
 let tourIndex = 0;
@@ -754,6 +878,9 @@ function endTour() { document.getElementById('tour-layer').hidden = true; }
 /* ---------------- boot ---------------- */
 
 async function boot() {
+  const intro = document.getElementById('intro-splash');
+  document.getElementById('intro-continue').addEventListener('click', () => { intro.classList.add('is-hidden'); });
+
   STORES = await loadStores();
   renderSidebar();
 
@@ -797,6 +924,14 @@ async function boot() {
   });
 
   document.getElementById('drill-body').addEventListener('click', (e) => {
+    const toggle = e.target.closest('[data-source-toggle]');
+    if (toggle) {
+      const body = toggle.nextElementSibling;
+      const open = !body.hidden;
+      body.hidden = open;
+      toggle.textContent = toggle.textContent.replace(open ? '▾' : '▸', open ? '▸' : '▾');
+      return;
+    }
     const row = e.target.closest('[data-drill]');
     if (row) dispatchDrillFromOverlay(row.dataset.drill, row.dataset.drillId);
   });
