@@ -102,6 +102,33 @@ function channelColorBySourceLabel(source) {
   return map[source] || 'var(--ink-400)';
 }
 
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function formatCount(n, format) {
+  return format === 'pct' ? Math.round(n) + '%' : Math.round(n).toLocaleString();
+}
+
+function animateCountUp(el, target, format) {
+  if (prefersReducedMotion()) { el.textContent = formatCount(target, format); return; }
+  const duration = 700;
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = formatCount(target * eased, format);
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function bindCountUps() {
+  document.querySelectorAll('.kpi-tile .value[data-count-to]').forEach(el => {
+    animateCountUp(el, parseFloat(el.dataset.countTo), el.dataset.countFormat);
+  });
+}
+
 function trendArrow(trend) {
   const map = { up: ['▲', 'up'], down: ['▼', 'down'], flat: ['→', 'flat'] };
   const [glyph, cls] = map[trend] || map.flat;
@@ -125,15 +152,17 @@ function drawRankList(containerId, rows) {
   requestAnimationFrame(() => { el.querySelectorAll('.rank-fill').forEach(f => { f.style.width = f.dataset.pct + '%'; }); });
 }
 
-function statTile({ id, tourId, label, value, sub, deltaPct, isPct, spark, noDelta, flagged }) {
+function statTile({ id, tourId, label, value, sub, deltaPct, isPct, spark, noDelta, flagged, countTo, countFormat }) {
   const dir = deltaPct > 0.4 ? 'up' : deltaPct < -0.4 ? 'down' : 'flat';
   const deltaHTML = noDelta
     ? (sub ? `<div class="delta flat">${sub}</div>` : '')
     : `<div class="delta ${dir}">${dir === 'up' ? '▲' : dir === 'down' ? '▼' : '→'} ${Math.abs(deltaPct).toFixed(1)}${isPct ? ' pts' : '%'} vs last month</div>`;
   const sparkHTML = spark ? `<svg class="spark" data-spark='${JSON.stringify(spark)}'></svg>` : '';
+  const countAttrs = countTo != null ? `data-count-to="${countTo}" data-count-format="${countFormat || 'int'}"` : '';
+  const displayValue = countTo != null ? formatCount(0, countFormat) : value;
   return `<div class="kpi-tile" data-kpi="${id}" tabindex="0" role="button" ${tourId ? `data-tour="${tourId}"` : ''} style="${flagged ? 'border-color:var(--magenta-600)' : ''}">
     <div class="label">${label}</div>
-    <div class="value" style="${flagged ? 'color:var(--magenta-600)' : ''}">${value}</div>
+    <div class="value" ${countAttrs} style="${flagged ? 'color:var(--magenta-600)' : ''}">${displayValue}</div>
     ${deltaHTML}
     ${sparkHTML}
   </div>`;
@@ -189,6 +218,22 @@ function drawLineChart(svgId, tooltipId, data, color) {
     ${pts.map(p => `<circle class="dot" cx="${p[0]}" cy="${p[1]}" fill="${color}"/>`).join('')}
     ${endLabel}${axisLabels}
     <line id="${svgId}-hover" x1="0" x2="0" y1="${padT}" y2="${padT + plotH}" stroke="var(--ink-400)" stroke-width="1" opacity="0"/>`;
+
+  const linePathEl = svg.querySelector('.line');
+  const areaEl = svg.querySelector('.area');
+  if (linePathEl && areaEl && !prefersReducedMotion()) {
+    const len = linePathEl.getTotalLength();
+    linePathEl.style.strokeDasharray = String(len);
+    linePathEl.style.strokeDashoffset = String(len);
+    areaEl.style.opacity = '0';
+    linePathEl.getBoundingClientRect(); // force reflow before transitioning
+    linePathEl.style.transition = 'stroke-dashoffset 0.9s var(--ease)';
+    areaEl.style.transition = 'opacity 0.7s var(--ease) 0.2s';
+    requestAnimationFrame(() => {
+      linePathEl.style.strokeDashoffset = '0';
+      areaEl.style.opacity = '';
+    });
+  }
 
   const hoverLine = document.getElementById(`${svgId}-hover`);
   wrap.onmousemove = (e) => {
@@ -403,8 +448,8 @@ function renderOverview() {
     </div>
 
     <div class="kpi-row">
-      ${statTile({ id: 'kpi-orders', tourId: 'kpi-0', label: `Total orders, ${latest.label}`, value: latestTotal.toLocaleString(), deltaPct, spark: monthsAgg.map(monthTotal) })}
-      ${statTile({ id: 'kpi-online', label: 'Online share', value: onlineShare.toFixed(0) + '%', deltaPct: onlineDelta, isPct: true, spark: monthsAgg.map(onlineSharePct) })}
+      ${statTile({ id: 'kpi-orders', tourId: 'kpi-0', label: `Total orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: monthsAgg.map(monthTotal) })}
+      ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: monthsAgg.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders · trending ' + topDish.trend, noDelta: true })}
       ${statTile({ id: 'kpi-flags', label: 'Stores flagged', value: `${flaggedCount} of ${storesRanked.length}`, sub: flaggedCount ? 'Needs attention' : 'All steady', noDelta: true, flagged: flaggedCount > 0 })}
     </div>
@@ -435,6 +480,7 @@ function renderOverview() {
   drawRankList('dish-rank-list', dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null, drill: 'dish-detail', drillId: d.name })));
   drawLineChart('trend-chart', 'trend-tooltip', monthsAgg.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
   bindSparklines();
+  bindCountUps();
 }
 
 function buildOrdersTabHTML(store) {
@@ -490,8 +536,8 @@ function renderStore(storeId, tab) {
   content.innerHTML = `
     ${store.body ? `<div class="note-card">${escapeHTML(store.body)}</div>` : ''}
     <div class="kpi-row">
-      ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, value: latestTotal.toLocaleString(), deltaPct, spark: store.months.map(monthTotal) })}
-      ${statTile({ id: 'kpi-online', label: 'Online share', value: onlineShare.toFixed(0) + '%', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct) })}
+      ${statTile({ id: 'kpi-orders', label: `Orders, ${latest.label}`, countTo: latestTotal, countFormat: 'int', deltaPct, spark: store.months.map(monthTotal) })}
+      ${statTile({ id: 'kpi-online', label: 'Online share', countTo: onlineShare, countFormat: 'pct', deltaPct: onlineDelta, isPct: true, spark: store.months.map(onlineSharePct) })}
       ${statTile({ id: 'kpi-dish', label: 'Top dish', value: topDish.name, sub: topDish.orders.toLocaleString() + ' orders', noDelta: true })}
     </div>
     <div class="dash-section">
@@ -511,6 +557,7 @@ function renderStore(storeId, tab) {
   drawLineChart('store-trend-chart', 'store-trend-tooltip', store.months.map(m => ({ label: m.label, value: monthTotal(m) })), 'var(--sage-700)');
   drawRankList('store-dish-list', store.top_dishes.map((d, i) => ({ name: d.name, value: d.orders.toLocaleString(), pct: (d.orders / (store.top_dishes[0].orders || 1)) * 100, color: 'var(--sage-700)', trend: d.trend, badge: i === 0 ? 'Trending' : null })));
   bindSparklines();
+  bindCountUps();
 }
 
 /* ---------------- router ---------------- */

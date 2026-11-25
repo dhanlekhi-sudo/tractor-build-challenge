@@ -813,3 +813,16 @@ table.data tr:hover td { background: var(--cream-100); }
   .diagram svg.connectors { display: none; }
   .col { gap: 8px; }
 }
+
+/* Count-up numbers and the chart draw-in skip themselves in JS (see
+   prefersReducedMotion() in dashboard.js); this is the blanket net for
+   every CSS transition/keyframe on both pages — hover lifts, the hero's
+   staggered fade-in, the drill-down/panel morph, the guided tour. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
