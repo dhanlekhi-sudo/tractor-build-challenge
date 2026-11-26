@@ -259,6 +259,10 @@ body.is-dashboard { overflow: hidden; }
   cursor: pointer; margin-right: 4px;
 }
 
+.db-pagination { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+.db-pagination .filter-chip:disabled { opacity: 0.35; cursor: default; }
+.db-pagination .filter-chip:disabled:hover { border-color: var(--line); }
+
 /* ---------- data-flow (lineage) diagram ---------- */
 
 .data-flow { position: relative; padding: 30px 10px 10px; }

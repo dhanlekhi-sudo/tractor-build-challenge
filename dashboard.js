@@ -975,6 +975,109 @@ function buildPrintersTabHTML(store) {
   `;
 }
 
+/* ---------------- database page — browse the raw tables directly ---------------- */
+
+const DB_PAGE_SIZE = 50;
+let dbOrdersPage = 0;
+let dbStoreFilter = 'All';
+let dbChannelFilter = 'All';
+
+function dbOrderRowHTML(o) {
+  return `<tr>
+    <td>${o.storeName}</td><td>${o.order_no}</td><td>${formatDateLabel(o.date)}</td>
+    <td><span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span></td>
+    <td>${o.time}</td><td>${o.dish}</td><td>$${o.total.toFixed(2)}</td>
+    <td><span class="status status--${o.status === 'Review' ? 'review' : 'ok'}">${o.status}</span></td>
+  </tr>`;
+}
+
+function filteredDbOrders() {
+  return allOrdersWithStore().filter(o =>
+    (dbStoreFilter === 'All' || o.storeName === dbStoreFilter) &&
+    (dbChannelFilter === 'All' || o.source === dbChannelFilter)
+  );
+}
+
+function renderDbOrdersTable() {
+  const filtered = filteredDbOrders();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / DB_PAGE_SIZE));
+  dbOrdersPage = Math.min(dbOrdersPage, totalPages - 1);
+  const start = dbOrdersPage * DB_PAGE_SIZE;
+  const pageRows = filtered.slice(start, start + DB_PAGE_SIZE);
+  const tbody = document.getElementById('db-orders-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = pageRows.length ? pageRows.map(dbOrderRowHTML).join('') : '<tr><td colspan="8" style="color:var(--ink-400);">No rows match this filter.</td></tr>';
+  document.getElementById('db-pagination').innerHTML = `
+    <button class="filter-chip" data-db-page="prev" ${dbOrdersPage === 0 ? 'disabled' : ''}>← Prev</button>
+    <span style="font-family:var(--mono);font-size:0.72rem;color:var(--ink-400);">Page ${dbOrdersPage + 1} of ${totalPages} · ${filtered.length.toLocaleString()} rows</span>
+    <button class="filter-chip" data-db-page="next" ${dbOrdersPage >= totalPages - 1 ? 'disabled' : ''}>Next →</button>
+  `;
+}
+
+function buildDbOrdersHTML() {
+  const storeNames = ['All', ...STORES.map(s => s.name)];
+  const channels = ['All', 'DoorDash', 'Uber Eats', 'In-store', 'Website'];
+  return `
+    <div class="filter-row">
+      <select id="db-store-select" class="day-select">${storeNames.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+      ${channels.map(c => `<button class="filter-chip ${c === 'All' ? 'active' : ''}" data-db-filter="${c}">${c}</button>`).join('')}
+    </div>
+    <table class="data">
+      <thead><tr><th>Store</th><th>Order</th><th>Date</th><th>Source</th><th>Time</th><th>Dish</th><th>Total</th><th>Status</th></tr></thead>
+      <tbody id="db-orders-tbody"></tbody>
+    </table>
+    <div class="db-pagination" id="db-pagination"></div>
+  `;
+}
+
+function buildDbStoresHTML() {
+  const rows = STORES.map(s => {
+    const latest = s.months[s.months.length - 1];
+    return `<tr><td>${s.id}</td><td>${s.name}</td><td>${s.address}</td><td>${monthTotal(latest).toLocaleString()}</td><td>${(latest.visits || 0).toLocaleString()}</td><td>${isFlagged(s) ? '<span class="status status--review">Flagged</span>' : '<span class="status status--ok">Steady</span>'}</td></tr>`;
+  }).join('');
+  return `<table class="data"><thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Orders, latest month</th><th>Foot traffic</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function buildDbPrintersHTML() {
+  const rows = STORES.flatMap(s => s.printers.map(p =>
+    `<tr><td>${s.name}</td><td>${p.name}</td><td>${p.status === 'jammed' ? '<span class="status status--review">Jammed</span>' : '<span class="status status--ok">Online</span>'}</td></tr>`
+  )).join('');
+  return `<table class="data"><thead><tr><th>Store</th><th>Printer</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function buildDbDishesHTML() {
+  const map = new Map();
+  STORES.forEach(s => s.top_dishes.forEach(d => map.set(d.name, (map.get(d.name) || 0) + d.orders)));
+  const rows = Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+    .map(([name, orders], i) => `<tr><td>${i + 1}</td><td>${name}</td><td>${orders.toLocaleString()}</td></tr>`).join('');
+  return `<table class="data"><thead><tr><th>Rank</th><th>Dish</th><th>Orders, this month (all stores)</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderDatabase(tab) {
+  const page = document.getElementById('dash-page');
+  const allOrders = allOrdersWithStore();
+  page.innerHTML = `
+    <div class="dash-header">
+      <div><div class="eyebrow eyebrow--sage">Database</div><h1>The order book, in full.</h1></div>
+      <div class="dash-header__right"><div class="updated">${allOrders.length.toLocaleString()} order rows · 4 stores</div></div>
+    </div>
+    <div class="dash-tabs">
+      <button class="dash-tab ${tab === 'orders' ? 'active' : ''}" data-db-tab="orders">Orders</button>
+      <button class="dash-tab ${tab === 'stores' ? 'active' : ''}" data-db-tab="stores">Stores</button>
+      <button class="dash-tab ${tab === 'printers' ? 'active' : ''}" data-db-tab="printers">Printers</button>
+      <button class="dash-tab ${tab === 'dishes' ? 'active' : ''}" data-db-tab="dishes">Dishes</button>
+    </div>
+    <div id="db-tab-content"></div>
+  `;
+  const content = document.getElementById('db-tab-content');
+  if (tab === 'stores') { content.innerHTML = buildDbStoresHTML(); return; }
+  if (tab === 'printers') { content.innerHTML = buildDbPrintersHTML(); return; }
+  if (tab === 'dishes') { content.innerHTML = buildDbDishesHTML(); return; }
+  dbOrdersPage = 0; dbStoreFilter = 'All'; dbChannelFilter = 'All';
+  content.innerHTML = buildDbOrdersHTML();
+  renderDbOrdersTable();
+}
+
 /* ---------------- router ---------------- */
 
 function renderSidebar() {
@@ -999,6 +1102,10 @@ function router() {
   if (parts[0] === 'overview') {
     CURRENT = { name: 'overview' };
     renderOverview();
+  } else if (parts[0] === 'database') {
+    const tab = parts[1] || 'orders';
+    CURRENT = { name: 'database', tab };
+    renderDatabase(tab);
   } else if (parts[0].startsWith('store-')) {
     const id = parts[0].replace('store-', '');
     const tab = parts[1] || 'overview';
@@ -1090,6 +1197,26 @@ async function boot() {
     const tabBtn = e.target.closest('.dash-tab[data-store-tab]');
     if (tabBtn) { location.hash = `#store-${CURRENT.id}/${tabBtn.dataset.storeTab}`; return; }
 
+    const dbTabBtn = e.target.closest('.dash-tab[data-db-tab]');
+    if (dbTabBtn) { location.hash = `#database/${dbTabBtn.dataset.dbTab}`; return; }
+
+    const dbFilterChip = e.target.closest('.filter-chip[data-db-filter]');
+    if (dbFilterChip) {
+      dbFilterChip.parentElement.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      dbFilterChip.classList.add('active');
+      dbChannelFilter = dbFilterChip.dataset.dbFilter;
+      dbOrdersPage = 0;
+      renderDbOrdersTable();
+      return;
+    }
+
+    const dbPageBtn = e.target.closest('[data-db-page]');
+    if (dbPageBtn && !dbPageBtn.disabled) {
+      dbOrdersPage += dbPageBtn.dataset.dbPage === 'next' ? 1 : -1;
+      renderDbOrdersTable();
+      return;
+    }
+
     const chip = e.target.closest('.filter-chip[data-filter]');
     if (chip) {
       chip.parentElement.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
@@ -1142,6 +1269,13 @@ async function boot() {
     if (sel && CURRENT.name === 'store') {
       const store = STORES.find(s => s.id === CURRENT.id);
       renderOrdersReceipts(store, sel.value);
+      return;
+    }
+    const dbSel = e.target.closest('#db-store-select');
+    if (dbSel) {
+      dbStoreFilter = dbSel.value;
+      dbOrdersPage = 0;
+      renderDbOrdersTable();
     }
   });
 
