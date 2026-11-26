@@ -1056,10 +1056,17 @@ function buildDbDishesHTML() {
 function renderDatabase(tab) {
   const page = document.getElementById('dash-page');
   const allOrders = allOrdersWithStore();
+  const dates = distinctDates(allOrders);
+  const firstDate = dates[0], lastDate = dates[dates.length - 1];
+  const [y] = lastDate.split('-');
+  const rangeLabel = `${formatDateLabel(firstDate)}–${formatDateLabel(lastDate)}, ${y}`;
   page.innerHTML = `
     <div class="dash-header">
       <div><div class="eyebrow eyebrow--sage">Database</div><h1>The order book, in full.</h1></div>
-      <div class="dash-header__right"><div class="updated">${allOrders.length.toLocaleString()} order rows · 4 stores</div></div>
+      <div class="dash-header__right">
+        <div class="updated">${allOrders.length.toLocaleString()} order rows · 4 stores</div>
+        <div class="updated">Covers ${rangeLabel} — every order ever recorded starts here</div>
+      </div>
     </div>
     <div class="dash-tabs">
       <button class="dash-tab ${tab === 'orders' ? 'active' : ''}" data-db-tab="orders">Orders</button>
