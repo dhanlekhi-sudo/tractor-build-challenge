@@ -553,6 +553,27 @@ table.data tr:hover td { background: var(--cream-100); }
 .receipt__btn.is-done { background: var(--sage-700); border-color: var(--sage-700); color: #fff; }
 .receipt__btn--ship.is-done { background: var(--magenta-600); border-color: var(--magenta-600); }
 
+/* click feedback — order moved to the next kitchen stage */
+@keyframes receipt-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(47, 89, 64, 0.45); }
+  70%  { box-shadow: 0 0 0 10px rgba(47, 89, 64, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 89, 64, 0); }
+}
+.ticket.receipt.receipt--pulse { animation: receipt-pulse 0.7s var(--ease); }
+
+/* a new order arriving live on the kitchen screen */
+.ticket.receipt.receipt--incoming {
+  opacity: 0; transform: translateY(-14px) scale(0.97);
+  border-color: var(--magenta-600);
+  box-shadow: 0 0 0 2px var(--magenta-600);
+}
+.ticket.receipt.receipt--incoming.receipt--settled {
+  opacity: 1; transform: translateY(0) scale(1);
+  border-color: var(--line);
+  box-shadow: none;
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease), border-color 1.4s var(--ease) 0.3s, box-shadow 1.4s var(--ease) 0.3s;
+}
+
 /* dashboard (metrics panel) */
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 0 28px; }
 .stat-tile {

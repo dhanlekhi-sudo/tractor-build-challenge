@@ -795,10 +795,10 @@ function receiptsSectionHTML(orders) {
   const white = orders.filter(o => o.source === 'In-store' || o.source === 'Website');
   const blue = orders.filter(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
   return `
-    <div class="section-label">In-store &amp; pickup — white — ${white.length}</div>
-    <div class="receipt-grid">${white.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No in-store or pickup orders for this selection.</p>'}</div>
-    <div class="section-label" style="margin-top:28px;">Delivery — blue — ${blue.length}</div>
-    <div class="receipt-grid">${blue.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No delivery orders for this selection.</p>'}</div>
+    <div class="section-label" id="receipts-white-label">In-store &amp; pickup — white — ${white.length}</div>
+    <div class="receipt-grid" id="receipts-white">${white.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No in-store or pickup orders for this selection.</p>'}</div>
+    <div class="section-label" id="receipts-blue-label" style="margin-top:28px;">Delivery — blue — ${blue.length}</div>
+    <div class="receipt-grid" id="receipts-blue">${blue.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No delivery orders for this selection.</p>'}</div>
   `;
 }
 
@@ -807,6 +807,79 @@ function renderOrdersReceipts(store, dayValue) {
   document.getElementById('receipts-wrap').innerHTML = receiptsSectionHTML(orders);
   const activeChip = document.querySelector('.filter-chip.active');
   applyReceiptFilter(activeChip ? activeChip.dataset.filter : 'All');
+  manageLiveOrderSim(store, dayValue);
+}
+
+/* ---------------- live kitchen simulation — new orders keep arriving on "today" ---------------- */
+
+let liveOrderTimer = null;
+let liveOrderSimStoreId = null;
+
+function stopLiveOrderSim() {
+  if (liveOrderTimer) { clearTimeout(liveOrderTimer); liveOrderTimer = null; }
+  liveOrderSimStoreId = null;
+}
+
+function manageLiveOrderSim(store, dayValue) {
+  const dates = distinctDates(store.orders);
+  const latest = dates[dates.length - 1];
+  if (dayValue !== latest) { stopLiveOrderSim(); return; }
+  if (liveOrderSimStoreId === store.id) return; // already running for this store
+  stopLiveOrderSim();
+  liveOrderSimStoreId = store.id;
+  scheduleNextSimulatedOrder(store, latest);
+}
+
+function scheduleNextSimulatedOrder(store, dateStr) {
+  const delay = 7000 + Math.random() * 8000;
+  liveOrderTimer = setTimeout(() => {
+    if (liveOrderSimStoreId !== store.id) return; // navigated away — stop quietly
+    injectSimulatedOrder(store, dateStr);
+    scheduleNextSimulatedOrder(store, dateStr);
+  }, delay);
+}
+
+function injectSimulatedOrder(store, dateStr) {
+  const grid = document.getElementById('receipts-white') || document.getElementById('receipts-blue');
+  if (!grid) { stopLiveOrderSim(); return; } // Orders tab no longer mounted
+
+  const dishNames = store.top_dishes.map(d => d.name);
+  const dish = dishNames[Math.floor(Math.random() * dishNames.length)];
+  const weightedSources = ['In-store', 'In-store', 'In-store', 'DoorDash', 'Uber Eats', 'Website'];
+  const source = weightedSources[Math.floor(Math.random() * weightedSources.length)];
+  const now = new Date();
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const order = {
+    order_no: `T-${90000 + Math.floor(Math.random() * 9999)}`,
+    date: dateStr, time, source, dish,
+    total: Number((9 + Math.random() * 14).toFixed(2)),
+    status: 'Received', storeName: store.name,
+  };
+  store.orders.push(order);
+
+  const isDelivery = source === 'DoorDash' || source === 'Uber Eats';
+  const targetGridId = isDelivery ? 'receipts-blue' : 'receipts-white';
+  const targetGrid = document.getElementById(targetGridId);
+  if (!targetGrid) return;
+
+  const emptyNote = targetGrid.querySelector('p');
+  if (emptyNote) emptyNote.remove();
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = receiptCardHTML(order);
+  const card = wrapper.firstElementChild;
+  card.classList.add('receipt--incoming');
+  targetGrid.prepend(card);
+  requestAnimationFrame(() => card.classList.add('receipt--settled'));
+
+  const activeChip = document.querySelector('.filter-chip.active');
+  applyReceiptFilter(activeChip ? activeChip.dataset.filter : 'All');
+
+  const label = document.getElementById(isDelivery ? 'receipts-blue-label' : 'receipts-white-label');
+  if (label) {
+    const count = targetGrid.querySelectorAll('.receipt').length;
+    label.textContent = label.textContent.replace(/— \d+$/, `— ${count}`);
+  }
 }
 
 function applyReceiptFilter(val) {
@@ -891,8 +964,11 @@ function renderStore(storeId, tab) {
     content.innerHTML = buildOrdersTabHTML(store);
     drawLineChart('daily-trend-chart', 'daily-trend-tooltip', dailyOrderCounts(store.orders).map(d => ({ label: d.label, value: d.count })), 'var(--ch-instore)');
     requestAnimationFrame(drawDataFlowConnectors);
+    const dates = distinctDates(store.orders);
+    manageLiveOrderSim(store, dates[dates.length - 1]);
     return;
   }
+  stopLiveOrderSim();
   if (tab === 'printers') {
     content.innerHTML = buildPrintersTabHTML(store);
     return;
@@ -1106,6 +1182,9 @@ function router() {
   const hash = location.hash.replace(/^#/, '') || 'overview';
   const parts = hash.split('/');
   highlightNav(parts[0]);
+  // every navigation starts clean — renderStore re-arms this itself only
+  // when it lands on a store's Orders tab, on the most recent day
+  stopLiveOrderSim();
   if (parts[0] === 'overview') {
     CURRENT = { name: 'overview' };
     renderOverview();
@@ -1242,6 +1321,9 @@ async function boot() {
       } else if (receiptBtn.dataset.receiptAction === 'shipped' && receiptBtn.classList.contains('is-done')) {
         statusEl.textContent = 'Handed off'; statusEl.className = 'status status--ok';
       }
+      card.classList.remove('receipt--pulse');
+      void card.offsetWidth; // restart the animation even if clicked twice in a row
+      card.classList.add('receipt--pulse');
       return;
     }
 
