@@ -1464,8 +1464,18 @@ function endTour() {
 /* ---------------- boot ---------------- */
 
 async function boot() {
+  // The opening popup's main button starts the tutorial. The data may still be
+  // loading when it's clicked, so the tour waits until the portal is drawn.
   const intro = document.getElementById('intro-splash');
-  document.getElementById('intro-continue').addEventListener('click', () => { intro.classList.add('is-hidden'); });
+  let markPortalReady;
+  const portalReady = new Promise(resolve => { markPortalReady = resolve; });
+  document.getElementById('intro-continue').addEventListener('click', async () => {
+    intro.classList.add('is-hidden');
+    document.getElementById('start-tour').classList.remove('is-pulsing');
+    await portalReady;
+    startTour();
+  });
+  document.getElementById('intro-skip').addEventListener('click', () => { intro.classList.add('is-hidden'); });
 
   STORES = await loadStores();
   applySavedStatuses(STORES);
@@ -1578,6 +1588,7 @@ async function boot() {
   });
   if (!location.hash) location.hash = '#overview';
   router();
+  markPortalReady();
 }
 
 boot();

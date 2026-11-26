@@ -348,6 +348,12 @@ body.is-dashboard { overflow: hidden; }
   transition: background 0.2s var(--ease), transform 0.2s var(--ease);
 }
 #intro-continue:hover { background: #d4568a; transform: translateY(-2px); }
+.intro-splash__actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+#intro-skip {
+  all: unset; cursor: pointer; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.04em; color: var(--ink-400);
+  transition: color 0.2s var(--ease);
+}
+#intro-skip:hover { color: var(--ink-900); text-decoration: underline; }
 
 @media (max-width: 880px) {
   .dash { flex-direction: column; height: auto; }
