@@ -19,7 +19,7 @@ description: The design and motion specification for the Tractor Build Challenge
   values use the font's default proportional figures (dataviz skill's
   guidance: tabular-nums makes a 3-digit number look loose at display size).
   Reserve `tabular-nums` for literal table columns (`.data td`) and the
-  Orders tab, where digits must align vertically.
+  In-restaurant tab's receipts, where digits must align vertically.
 
 ## Palette — defined once in style.css `:root`, reused everywhere
 | Token | Hex | Role |

@@ -712,68 +712,80 @@ function formatDateLabel(dateStr) {
   return `${MONTH_NAMES[m - 1]} ${d}`;
 }
 
-function dailyOrderCounts(orders) {
-  const map = new Map();
-  orders.forEach(o => map.set(o.date, (map.get(o.date) || 0) + 1));
-  return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date, count, label: String(Number(date.split('-')[2])) }));
+/* ---------------- In-restaurant tab — today's receipts, Ready or Cancel ---------------- */
+
+// An order is "open" until someone marks it Ready or Cancels it (or the
+// order book already shows it further along than the kitchen).
+const DONE_STATUSES = ['Ready', 'Handed off', 'Settled', 'Cancelled'];
+function isOpenOrder(o) { return !DONE_STATUSES.includes(o.status); }
+function statusClass(status) {
+  if (status === 'Cancelled') return 'cancelled';
+  if (status === 'Review') return 'review';
+  return 'ok';
+}
+function byNewest(a, b) { return b.time.localeCompare(a.time); }
+
+function todaysOrders(store) {
+  const dates = distinctDates(store.orders);
+  const today = dates[dates.length - 1];
+  return { today, orders: ordersOnDate(store.orders, today) };
 }
 
-function buildOrdersTabHTML(store) {
-  const channels = ['All', 'DoorDash', 'Uber Eats', 'In-store', 'Website'];
-  const dates = distinctDates(store.orders);
-  const latest = dates[dates.length - 1];
-  const dayOptions = dates.map(d => `<option value="${d}" ${d === latest ? 'selected' : ''}>${formatDateLabel(d)}</option>`).join('');
-  return `
-    <div class="section-label">Orders per day — ${formatDateLabel(dates[0]).split(' ')[0]} ${dates[0].split('-')[0]}</div>
-    <div class="dash-card chart-wrap" style="margin-bottom:20px;"><svg class="linechart" id="daily-trend-chart"></svg><div class="chart-tooltip" id="daily-trend-tooltip"></div></div>
-    <div class="filter-row">
-      <select id="order-day-select" class="day-select">
-        <option value="__all__">All ${dates.length} days</option>
-        ${dayOptions}
-      </select>
-      ${channels.map(c => `<button class="filter-chip ${c === 'All' ? 'active' : ''}" data-filter="${c}">${c}</button>`).join('')}
-    </div>
-    <div id="receipts-wrap">${receiptsSectionHTML(ordersOnDate(store.orders, latest))}</div>
+/* Ready / Cancel write straight into the in-page order book (store.orders —
+   the same rows the Database page and every drill-down read), and are kept
+   in this browser's localStorage so they survive a refresh. There is no
+   server: the Excel files themselves never change. */
+const STATUS_STORE_KEY = 'tractor.orderStatus.v1';
+function statusKey(storeId, orderNo) { return `${storeId}:${orderNo}`; }
 
-    <div class="section-label section-label--tech">Where this table feeds</div>
-    <div class="data-flow" id="data-flow">
-      <svg class="connectors" id="data-flow-connectors"></svg>
-      <div class="data-flow__inner">
-        <div class="data-flow__source" id="flow-source">
-          <div class="data-flow__source-bar"><span></span><span></span><span></span></div>
-          <div class="data-flow__source-label">store-${store.id}.xlsx</div>
-          <div class="data-flow__source-sub">${store.orders.length.toLocaleString()} rows · ${dates.length} days</div>
-        </div>
-        <div class="data-flow__targets">
-          <div class="data-flow__node" id="flow-kpi" data-flow-action="overview">KPI tiles<span>counts &amp; totals, this page</span></div>
-          <div class="data-flow__node" id="flow-channel" data-flow-action="channel">Channel mix<span>Online Share drill-down</span></div>
-          <div class="data-flow__node" id="flow-dish" data-flow-action="dish">Dish leaderboard<span>Top Dish drill-down</span></div>
-          <div class="data-flow__node" id="flow-printers" data-flow-action="printers">Kitchen screen<span>Printers tab</span></div>
-        </div>
-      </div>
+function readSavedStatuses() {
+  try { return JSON.parse(localStorage.getItem(STATUS_STORE_KEY)) || {}; } catch { return {}; }
+}
+function writeSavedStatuses(map) {
+  try { localStorage.setItem(STATUS_STORE_KEY, JSON.stringify(map)); } catch { /* storage blocked — the in-page order book still has the change */ }
+}
+
+function applySavedStatuses(stores) {
+  const saved = readSavedStatuses();
+  const kept = {};
+  stores.forEach(s => s.orders.forEach(o => {
+    const key = statusKey(s.id, o.order_no);
+    if (saved[key]) { o.status = saved[key]; kept[key] = saved[key]; }
+  }));
+  writeSavedStatuses(kept); // drops entries for simulated orders that no longer exist
+}
+
+function saveOrderStatus(store, orderNo, status) {
+  const order = store.orders.find(o => o.order_no === orderNo);
+  if (!order) return null;
+  order.status = status;
+  const saved = readSavedStatuses();
+  saved[statusKey(store.id, orderNo)] = status;
+  writeSavedStatuses(saved);
+  return order;
+}
+
+function receiptActionsHTML() {
+  return `<div class="receipt__actions">
+      <button class="receipt__btn receipt__btn--ready" data-receipt-action="ready">Ready</button>
+      <button class="receipt__btn receipt__btn--cancel" data-receipt-action="cancel">Cancel</button>
     </div>`;
 }
 
-function drawDataFlowConnectors() {
-  const container = document.getElementById('data-flow');
-  const svg = document.getElementById('data-flow-connectors');
-  const source = document.getElementById('flow-source');
-  if (!container || !svg || !source) return;
-  const targets = ['flow-kpi', 'flow-channel', 'flow-dish', 'flow-printers'].map(id => document.getElementById(id)).filter(Boolean);
-  const cRect = container.getBoundingClientRect();
-  const sRect = source.getBoundingClientRect();
-  const p1 = { x: sRect.right - cRect.left, y: sRect.top - cRect.top + sRect.height / 2 };
-  svg.innerHTML = targets.map(t => {
-    const r = t.getBoundingClientRect();
-    const p2 = { x: r.left - cRect.left, y: r.top - cRect.top + r.height / 2 };
-    const dx = Math.max(24, (p2.x - p1.x) * 0.5);
-    return `<path class="connector connector--live" d="M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}"/>`;
-  }).join('');
+function receiptConfirmHTML() {
+  return `<div class="receipt__actions receipt__actions--confirm">
+      <span class="receipt__confirm-text">Cancel this order?</span>
+      <button class="receipt__btn receipt__btn--cancel" data-receipt-action="confirm-cancel">Yes, cancel</button>
+      <button class="receipt__btn" data-receipt-action="keep">Keep</button>
+    </div>`;
 }
 
-function receiptCardHTML(o) {
+function receiptCardHTML(o, opts = {}) {
   const isDelivery = o.source === 'DoorDash' || o.source === 'Uber Eats';
-  return `<div class="ticket receipt ${isDelivery ? 'ticket--blue' : 'ticket--white'}" data-source="${o.source}">
+  const classes = ['ticket', 'receipt', isDelivery ? 'ticket--blue' : 'ticket--white'];
+  if (o.status === 'Cancelled') classes.push('receipt--cancelled');
+  if (opts.demo) classes.push('receipt--demo');
+  return `<div class="${classes.join(' ')}" data-order-no="${o.order_no}" data-source="${o.source}">
     <div class="receipt__head">
       <span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span>
       <span class="receipt__date">${formatDateLabel(o.date)} · ${o.time}</span>
@@ -782,32 +794,79 @@ function receiptCardHTML(o) {
     <div class="receipt__item">${o.dish}</div>
     <div class="receipt__foot">
       <span class="receipt__total">$${o.total.toFixed(2)}</span>
-      <span class="status status--${o.status === 'Review' ? 'review' : 'ok'}">${o.status}</span>
+      <span class="status status--${statusClass(o.status)}">${o.status}</span>
     </div>
-    <div class="receipt__actions">
-      <button class="receipt__btn" data-receipt-action="ready">Order ready</button>
-      <button class="receipt__btn receipt__btn--ship" data-receipt-action="shipped">Shipped</button>
-    </div>
+    ${isOpenOrder(o) ? receiptActionsHTML() : ''}
   </div>`;
 }
 
-function receiptsSectionHTML(orders) {
-  const white = orders.filter(o => o.source === 'In-store' || o.source === 'Website');
-  const blue = orders.filter(o => o.source === 'DoorDash' || o.source === 'Uber Eats');
+function buildRestaurantTabHTML(store) {
+  const { today, orders } = todaysOrders(store);
+  const open = orders.filter(isOpenOrder).sort(byNewest);
+  const done = orders.filter(o => !isOpenOrder(o)).sort(byNewest);
   return `
-    <div class="section-label" id="receipts-white-label">In-store &amp; pickup — white — ${white.length}</div>
-    <div class="receipt-grid" id="receipts-white">${white.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No in-store or pickup orders for this selection.</p>'}</div>
-    <div class="section-label" id="receipts-blue-label" style="margin-top:28px;">Delivery — blue — ${blue.length}</div>
-    <div class="receipt-grid" id="receipts-blue">${blue.map(receiptCardHTML).join('') || '<p style="color:var(--ink-400);font-size:0.85rem;">No delivery orders for this selection.</p>'}</div>
-  `;
+    <p class="tile-hint restaurant-hint">Today, ${formatDateLabel(today)}. New orders land at the top. <b>Ready</b> or <b>Cancel</b> saves straight to the order book in this browser — the Database page shows the change.</p>
+    <div class="section-label" id="open-label">Open orders — ${open.length}</div>
+    <div class="receipt-grid" id="receipts-open">${open.map(o => receiptCardHTML(o)).join('')}</div>
+    <p class="receipt-empty" id="receipts-open-empty" ${open.length ? 'hidden' : ''}>All caught up — new orders will show up here.</p>
+    <div class="section-label" id="done-label" style="margin-top:28px;">Done today — ${done.length}</div>
+    <div class="receipt-grid receipt-grid--done" id="receipts-done">${done.map(o => receiptCardHTML(o)).join('')}</div>`;
 }
 
-function renderOrdersReceipts(store, dayValue) {
-  const orders = dayValue === '__all__' ? store.orders : ordersOnDate(store.orders, dayValue);
-  document.getElementById('receipts-wrap').innerHTML = receiptsSectionHTML(orders);
-  const activeChip = document.querySelector('.filter-chip.active');
-  applyReceiptFilter(activeChip ? activeChip.dataset.filter : 'All');
-  manageLiveOrderSim(store, dayValue);
+function updateRestaurantCounts() {
+  const openGrid = document.getElementById('receipts-open');
+  const doneGrid = document.getElementById('receipts-done');
+  if (!openGrid || !doneGrid) return;
+  const real = grid => grid.querySelectorAll('.receipt:not(.receipt--demo)').length;
+  document.getElementById('open-label').textContent = `Open orders — ${real(openGrid)}`;
+  document.getElementById('done-label').textContent = `Done today — ${real(doneGrid)}`;
+  document.getElementById('receipts-open-empty').hidden = openGrid.querySelector('.receipt') !== null;
+}
+
+function swapReceiptActions(card, html) {
+  const actions = card.querySelector('.receipt__actions');
+  if (actions) actions.outerHTML = html;
+}
+
+// Shows the new status on the card and plays the click feedback. Shared by
+// the real buttons and the tour's demo animation.
+function setReceiptStatus(card, status) {
+  const statusEl = card.querySelector('.receipt__foot .status');
+  statusEl.textContent = status;
+  statusEl.className = `status status--${statusClass(status)}`;
+  const actions = card.querySelector('.receipt__actions');
+  if (actions) actions.remove();
+  card.classList.remove('receipt--incoming', 'receipt--settled', 'receipt--pulse', 'receipt--pulse-cancel');
+  if (status === 'Cancelled') card.classList.add('receipt--cancelled');
+  void card.offsetWidth; // restart the pulse animation
+  card.classList.add(status === 'Cancelled' ? 'receipt--pulse-cancel' : 'receipt--pulse');
+}
+
+async function moveReceiptToDone(card) {
+  if (!prefersReducedMotion()) {
+    await wait(650);
+    card.classList.add('receipt--leaving');
+    await wait(260);
+  }
+  const doneGrid = document.getElementById('receipts-done');
+  if (!doneGrid || !card.isConnected) return;
+  card.classList.remove('receipt--leaving');
+  doneGrid.prepend(card);
+  updateRestaurantCounts();
+}
+
+function handleReceiptAction(btn) {
+  const card = btn.closest('.receipt');
+  if (!card || card.classList.contains('receipt--demo')) return; // tour demo cards are animation only
+  const action = btn.dataset.receiptAction;
+  if (action === 'cancel') { swapReceiptActions(card, receiptConfirmHTML()); return; }
+  if (action === 'keep') { swapReceiptActions(card, receiptActionsHTML()); return; }
+  const status = action === 'ready' ? 'Ready' : action === 'confirm-cancel' ? 'Cancelled' : null;
+  if (!status) return;
+  const store = STORES.find(s => s.id === CURRENT.id);
+  if (!store || !saveOrderStatus(store, card.dataset.orderNo, status)) return;
+  setReceiptStatus(card, status);
+  moveReceiptToDone(card);
 }
 
 /* ---------------- live kitchen simulation — new orders keep arriving on "today" ---------------- */
@@ -820,72 +879,55 @@ function stopLiveOrderSim() {
   liveOrderSimStoreId = null;
 }
 
-function manageLiveOrderSim(store, dayValue) {
-  const dates = distinctDates(store.orders);
-  const latest = dates[dates.length - 1];
-  if (dayValue !== latest) { stopLiveOrderSim(); return; }
+function manageLiveOrderSim(store) {
   if (liveOrderSimStoreId === store.id) return; // already running for this store
   stopLiveOrderSim();
   liveOrderSimStoreId = store.id;
-  scheduleNextSimulatedOrder(store, latest);
+  scheduleNextSimulatedOrder(store, todaysOrders(store).today);
 }
 
 function scheduleNextSimulatedOrder(store, dateStr) {
   const delay = 7000 + Math.random() * 8000;
   liveOrderTimer = setTimeout(() => {
     if (liveOrderSimStoreId !== store.id) return; // navigated away — stop quietly
-    injectSimulatedOrder(store, dateStr);
+    if (!tourIsOpen()) injectSimulatedOrder(store, dateStr); // hold still while the tour is demoing
     scheduleNextSimulatedOrder(store, dateStr);
   }, delay);
 }
 
+function nextLiveOrderNo(store) {
+  const taken = new Set(store.orders.map(o => o.order_no));
+  let orderNo;
+  do { orderNo = `T-${90000 + Math.floor(Math.random() * 9999)}`; } while (taken.has(orderNo));
+  return orderNo;
+}
+
 function injectSimulatedOrder(store, dateStr) {
-  const grid = document.getElementById('receipts-white') || document.getElementById('receipts-blue');
-  if (!grid) { stopLiveOrderSim(); return; } // Orders tab no longer mounted
+  const openGrid = document.getElementById('receipts-open');
+  if (!openGrid) { stopLiveOrderSim(); return; } // In-restaurant tab no longer mounted
 
   const dishNames = store.top_dishes.map(d => d.name);
-  const dish = dishNames[Math.floor(Math.random() * dishNames.length)];
   const weightedSources = ['In-store', 'In-store', 'In-store', 'DoorDash', 'Uber Eats', 'Website'];
-  const source = weightedSources[Math.floor(Math.random() * weightedSources.length)];
   const now = new Date();
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const order = {
-    order_no: `T-${90000 + Math.floor(Math.random() * 9999)}`,
-    date: dateStr, time, source, dish,
+    order_no: nextLiveOrderNo(store),
+    date: dateStr,
+    time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+    source: weightedSources[Math.floor(Math.random() * weightedSources.length)],
+    dish: dishNames[Math.floor(Math.random() * dishNames.length)],
     total: Number((9 + Math.random() * 14).toFixed(2)),
-    status: 'Received', storeName: store.name,
+    status: 'Received',
   };
   store.orders.push(order);
-
-  const isDelivery = source === 'DoorDash' || source === 'Uber Eats';
-  const targetGridId = isDelivery ? 'receipts-blue' : 'receipts-white';
-  const targetGrid = document.getElementById(targetGridId);
-  if (!targetGrid) return;
-
-  const emptyNote = targetGrid.querySelector('p');
-  if (emptyNote) emptyNote.remove();
 
   const wrapper = document.createElement('div');
   wrapper.innerHTML = receiptCardHTML(order);
   const card = wrapper.firstElementChild;
   card.classList.add('receipt--incoming');
-  targetGrid.prepend(card);
-  requestAnimationFrame(() => card.classList.add('receipt--settled'));
-
-  const activeChip = document.querySelector('.filter-chip.active');
-  applyReceiptFilter(activeChip ? activeChip.dataset.filter : 'All');
-
-  const label = document.getElementById(isDelivery ? 'receipts-blue-label' : 'receipts-white-label');
-  if (label) {
-    const count = targetGrid.querySelectorAll('.receipt').length;
-    label.textContent = label.textContent.replace(/— \d+$/, `— ${count}`);
-  }
-}
-
-function applyReceiptFilter(val) {
-  document.querySelectorAll('.receipt[data-source]').forEach(card => {
-    card.style.display = (val === 'All' || card.dataset.source === val) ? '' : 'none';
-  });
+  openGrid.prepend(card);
+  void card.offsetWidth; // commit the start state so the arrival animates
+  card.classList.add('receipt--settled');
+  updateRestaurantCounts();
 }
 
 /* ---------------- "the data behind this" — every drill can show its source orders ---------------- */
@@ -953,19 +995,16 @@ function renderStore(storeId, tab) {
     </div>
     <div class="dash-tabs">
       <button class="dash-tab ${tab === 'overview' ? 'active' : ''}" data-store-tab="overview">Overview</button>
-      <button class="dash-tab ${tab === 'orders' ? 'active' : ''}" data-store-tab="orders">Orders</button>
+      <button class="dash-tab ${tab === 'restaurant' ? 'active' : ''}" data-store-tab="restaurant">In-restaurant</button>
       <button class="dash-tab ${tab === 'printers' ? 'active' : ''}" data-store-tab="printers">Printers</button>
     </div>
     <div id="store-tab-content"></div>
   `;
 
   const content = document.getElementById('store-tab-content');
-  if (tab === 'orders') {
-    content.innerHTML = buildOrdersTabHTML(store);
-    drawLineChart('daily-trend-chart', 'daily-trend-tooltip', dailyOrderCounts(store.orders).map(d => ({ label: d.label, value: d.count })), 'var(--ch-instore)');
-    requestAnimationFrame(drawDataFlowConnectors);
-    const dates = distinctDates(store.orders);
-    manageLiveOrderSim(store, dates[dates.length - 1]);
+  if (tab === 'restaurant') {
+    content.innerHTML = buildRestaurantTabHTML(store);
+    manageLiveOrderSim(store);
     return;
   }
   stopLiveOrderSim();
@@ -1063,7 +1102,7 @@ function dbOrderRowHTML(o) {
     <td>${o.storeName}</td><td>${o.order_no}</td><td>${formatDateLabel(o.date)}</td>
     <td><span class="channel-badge" style="background:${channelColorBySourceLabel(o.source)}">${o.source}</span></td>
     <td>${o.time}</td><td>${o.dish}</td><td>$${o.total.toFixed(2)}</td>
-    <td><span class="status status--${o.status === 'Review' ? 'review' : 'ok'}">${o.status}</span></td>
+    <td><span class="status status--${statusClass(o.status)}">${o.status}</span></td>
   </tr>`;
 }
 
@@ -1183,7 +1222,7 @@ function router() {
   const parts = hash.split('/');
   highlightNav(parts[0]);
   // every navigation starts clean — renderStore re-arms this itself only
-  // when it lands on a store's Orders tab, on the most recent day
+  // when it lands on a store's In-restaurant tab
   stopLiveOrderSim();
   if (parts[0] === 'overview') {
     CURRENT = { name: 'overview' };
@@ -1194,7 +1233,8 @@ function router() {
     renderDatabase(tab);
   } else if (parts[0].startsWith('store-')) {
     const id = parts[0].replace('store-', '');
-    const tab = parts[1] || 'overview';
+    let tab = parts[1] || 'overview';
+    if (tab === 'orders') tab = 'restaurant'; // old links from before the tab was renamed
     CURRENT = { name: 'store', id, tab };
     renderStore(id, tab);
   }
@@ -1202,17 +1242,23 @@ function router() {
 
 /* ---------------- guided tour ---------------- */
 
+// A step can carry `route` (a function returning the hash to open first)
+// and `demo` (play the Ready / Cancel animation on a pretend order there).
 const TOUR_STEPS = [
   { selector: '[data-tour="sidebar"]', title: 'Welcome to the admin portal', text: "This is a draft prototype of the dashboard Tractor's head office would use — built on mock data, with no real database and no production hosting or domain behind it yet. Let's walk through it." },
   { selector: '.store-switcher', title: 'Switch restaurants anytime', text: 'This dropdown jumps straight to any store, or back to the head-office Overview — from wherever you are on the site.' },
   { selector: '[data-tour="kpi-0"]', title: 'Every number opens up', text: "Click any tile and it opens the full ranked list, the trend chart, and the actual order-book rows behind that number — nothing here is just a static label." },
   { selector: '.kpi-tile--pie', title: 'Orders by channel, live', text: "This one's a real pie chart, straight from the order book. Open it for a Current tab too — today's mix, not just the monthly average." },
   { selector: '[data-tour="kpi-grid"]', title: 'Built to fit on one screen', text: 'Every box is clickable and its detail lives one click away in an overlay, so the overview itself never needs scrolling to see everything at a glance.' },
-  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open a flagged store (the dot in the sidebar) and its Overview marks exactly which tile is behind the flag. Each store also has Orders and Printers tabs — the order book and the kitchen screen itself. Replay this tour anytime, and remember: every figure here is illustrative, not real Tractor data." },
+  { route: () => `#store-${tourStoreId()}/restaurant`, selector: '#receipts-open', demo: true, title: 'When an order comes in', text: "Each store's In-restaurant tab is the kitchen's view. A new order lands at the top as a receipt with two choices: Ready once it's made, or Cancel if it can't go out — Cancel asks once to be sure. Either one saves to the order book. (This order is just a demo, so nothing is saved.)" },
+  { selector: '[data-tour="tour-btn"]', title: "That's the whole portal", text: "Open a flagged store (the dot in the sidebar) and its Overview marks exactly which tile is behind the flag. Each store also has In-restaurant and Printers tabs — the live receipts and the kitchen printers. Replay this tour anytime, and remember: every figure here is illustrative, not real Tractor data." },
 ];
 
 let tourIndex = 0;
+let tourRun = 0; // bumps on every step change, so a stale animation stops itself
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+function tourIsOpen() { return !document.getElementById('tour-layer').hidden; }
+function tourStoreId() { return CURRENT.name === 'store' ? CURRENT.id : STORES[0].id; }
 
 async function startTour() {
   if ((location.hash.replace('#', '') || 'overview').split('/')[0] !== 'overview') {
@@ -1224,36 +1270,183 @@ async function startTour() {
   await showTourStep(0);
 }
 
-async function showTourStep(i) {
-  const step = TOUR_STEPS[i];
-  const target = document.querySelector(step.selector);
-  if (!target) { nextTourStep(); return; }
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  await wait(350);
-  const rect = target.getBoundingClientRect();
-  const spotlight = document.getElementById('tour-spotlight');
-  const cursor = document.getElementById('tour-cursor');
-  const card = document.getElementById('tour-card');
+const TOUR_EDGE = 16; // the card always keeps this much space from the window edge
+const TOUR_GAP = 20;  // space between the card and the thing it's pointing at
 
+// Smooth scrolling (and a receipt's slide-in) take a variable amount of time,
+// longest on a phone. Wait until the target has stopped moving before
+// measuring it, so the spotlight, cursor and card land on where it really is.
+async function waitUntilStill(el, maxMs = 1500) {
+  let lastTop = el.getBoundingClientRect().top;
+  let stillFor = 0;
+  for (let t = 0; t < maxMs && stillFor < 3; t += 50) {
+    await wait(50);
+    const top = el.getBoundingClientRect().top;
+    stillFor = Math.abs(top - lastTop) < 0.5 ? stillFor + 1 : 0;
+    lastTop = top;
+  }
+}
+
+// A pretend order slides in (a CSS transition). Wait for that slide to
+// actually finish rather than guessing how long it takes.
+async function waitForArrival(card) {
+  getComputedStyle(card).transform; // flush styles so the arrival transition exists
+  const sliding = card.getAnimations().filter(a => a.transitionProperty === 'transform');
+  await Promise.race([Promise.all(sliding.map(a => a.finished.catch(() => {}))), wait(1500)]);
+}
+
+function spotlightTourTarget(rect) {
+  const spotlight = document.getElementById('tour-spotlight');
   spotlight.style.left = (rect.left - 8) + 'px';
   spotlight.style.top = (rect.top - 8) + 'px';
   spotlight.style.width = (rect.width + 16) + 'px';
   spotlight.style.height = (rect.height + 16) + 'px';
-  cursor.style.left = (rect.left + rect.width / 2 - 11) + 'px';
-  cursor.style.top = (rect.top + rect.height / 2 - 11) + 'px';
+}
 
-  let cardLeft = rect.right + 24;
-  let cardTop = rect.top;
-  if (cardLeft + 320 > window.innerWidth) { cardLeft = rect.left; cardTop = rect.bottom + 20; }
-  cardLeft = Math.max(16, Math.min(cardLeft, window.innerWidth - 336));
-  if (cardTop + 190 > window.innerHeight) { cardTop = window.innerHeight - 210; }
-  card.style.left = cardLeft + 'px';
-  card.style.top = Math.max(16, cardTop) + 'px';
+function moveTourCursor(x, y) {
+  const cursor = document.getElementById('tour-cursor');
+  cursor.style.left = (x - 11) + 'px';
+  cursor.style.top = (y - 11) + 'px';
+}
 
+// Measures the card as it actually is (its text changes per step) and puts it
+// beside, then below/above the target — whichever fits fully on screen. If
+// nothing fits, it's clamped inside the window, and the CSS caps its height
+// and scrolls inside, so no part of it is ever off-screen.
+function placeTourCard(rect) {
+  const card = document.getElementById('tour-card');
+  const vw = document.documentElement.clientWidth;
+  const vh = document.documentElement.clientHeight;
+  const w = card.offsetWidth;
+  const h = card.offsetHeight;
+  const clampX = x => Math.max(TOUR_EDGE, Math.min(x, vw - w - TOUR_EDGE));
+  const clampY = y => Math.max(TOUR_EDGE, Math.min(y, vh - h - TOUR_EDGE));
+  const fits = (x, y) => x >= TOUR_EDGE && y >= TOUR_EDGE && x + w <= vw - TOUR_EDGE && y + h <= vh - TOUR_EDGE;
+  const options = [
+    { x: rect.right + TOUR_GAP, y: clampY(rect.top) },      // right of it
+    { x: rect.left - w - TOUR_GAP, y: clampY(rect.top) },   // left of it
+    { x: clampX(rect.left), y: rect.bottom + TOUR_GAP },    // below
+    { x: clampX(rect.left), y: rect.top - h - TOUR_GAP },   // above
+  ];
+  const spot = options.find(o => fits(o.x, o.y)) || { x: vw - w, y: vh - h };
+  card.style.left = clampX(spot.x) + 'px';
+  card.style.top = clampY(spot.y) + 'px';
+}
+
+async function showTourStep(i) {
+  const run = ++tourRun;
+  removeDemoReceipts();
+  const step = TOUR_STEPS[i];
+  // fade the card out while it changes: its new text can be taller, and it's
+  // only shown again once it has been measured and placed fully on screen
+  const card = document.getElementById('tour-card');
+  card.classList.add('is-moving');
+
+  if (step.route) {
+    const hash = step.route();
+    if (location.hash !== hash) { location.hash = hash; await wait(350); }
+    if (run !== tourRun) return;
+  }
+  let target = document.querySelector(step.selector);
+  if (!target) { nextTourStep(); return; }
+  if (step.demo) target = insertDemoReceipt(target); // aim at the pretend order, not the whole grid
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  await wait(200);
+  if (step.demo) await waitForArrival(target);
+  await waitUntilStill(target);
+  if (run !== tourRun) return;
   document.getElementById('tour-step-count').textContent = `Step ${i + 1} of ${TOUR_STEPS.length}`;
   document.getElementById('tour-title').textContent = step.title;
   document.getElementById('tour-text').textContent = step.text;
   document.getElementById('tour-next').textContent = (i === TOUR_STEPS.length - 1) ? 'Finish' : 'Next →';
+  card.scrollTop = 0;
+  const rect = target.getBoundingClientRect();
+  spotlightTourTarget(rect);
+  moveTourCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  placeTourCard(rect);
+  card.classList.remove('is-moving');
+  if (step.demo) playReceiptDemo(target, run);
+}
+
+/* The tour's order demo — a pretend order slides in, the cursor presses
+   Ready (or, every other round, Cancel → Yes, cancel). It's DOM-only: it
+   never touches store.orders or localStorage. */
+
+function removeDemoReceipts() {
+  document.querySelectorAll('.receipt--demo').forEach(el => el.remove());
+  const empty = document.getElementById('receipts-open-empty');
+  if (empty) updateRestaurantCounts();
+}
+
+function insertDemoReceipt(grid) {
+  removeDemoReceipts();
+  const store = STORES.find(s => s.id === CURRENT.id) || STORES[0];
+  const now = new Date();
+  const order = {
+    order_no: 'DEMO', date: todaysOrders(store).today,
+    time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+    source: 'In-store', dish: store.top_dishes[0].name, total: 14.5, status: 'Received',
+  };
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = receiptCardHTML(order, { demo: true });
+  const card = wrapper.firstElementChild;
+  card.classList.add('receipt--incoming');
+  grid.prepend(card);
+  void card.offsetWidth;
+  card.classList.add('receipt--settled');
+  updateRestaurantCounts();
+  return card;
+}
+
+async function tourTap(el) {
+  const cursor = document.getElementById('tour-cursor');
+  cursor.classList.add('is-clicking');
+  el.classList.add('is-pressed');
+  await wait(260);
+  cursor.classList.remove('is-clicking');
+}
+
+function cursorOnto(el) {
+  const r = el.getBoundingClientRect();
+  moveTourCursor(r.left + r.width / 2, r.top + r.height / 2);
+}
+
+async function playReceiptDemo(card, run) {
+  const alive = () => run === tourRun && card.isConnected;
+  let round = 0;
+  while (alive()) {
+    await wait(700); if (!alive()) return;
+    if (round % 2 === 0) {
+      const ready = card.querySelector('[data-receipt-action="ready"]');
+      cursorOnto(ready); await wait(850); if (!alive()) return;
+      await tourTap(ready); if (!alive()) return;
+      setReceiptStatus(card, 'Ready');
+    } else {
+      const cancel = card.querySelector('[data-receipt-action="cancel"]');
+      cursorOnto(cancel); await wait(850); if (!alive()) return;
+      await tourTap(cancel); if (!alive()) return;
+      swapReceiptActions(card, receiptConfirmHTML());
+      spotlightTourTarget(card.getBoundingClientRect()); // the confirm row makes the card taller
+      await wait(500); if (!alive()) return;
+      const yes = card.querySelector('[data-receipt-action="confirm-cancel"]');
+      cursorOnto(yes); await wait(800); if (!alive()) return;
+      await tourTap(yes); if (!alive()) return;
+      setReceiptStatus(card, 'Cancelled');
+    }
+    spotlightTourTarget(card.getBoundingClientRect());
+    await wait(1900); if (!alive()) return;
+
+    // next round: a fresh pretend order arrives in the same spot
+    const grid = card.parentElement;
+    card.remove();
+    card = insertDemoReceipt(grid);
+    await waitForArrival(card); if (!alive()) return;
+    const rect = card.getBoundingClientRect();
+    spotlightTourTarget(rect);
+    moveTourCursor(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    round++;
+  }
 }
 
 function nextTourStep() {
@@ -1262,7 +1455,11 @@ function nextTourStep() {
   showTourStep(tourIndex);
 }
 
-function endTour() { document.getElementById('tour-layer').hidden = true; }
+function endTour() {
+  tourRun++;
+  removeDemoReceipts();
+  document.getElementById('tour-layer').hidden = true;
+}
 
 /* ---------------- boot ---------------- */
 
@@ -1271,6 +1468,7 @@ async function boot() {
   document.getElementById('intro-continue').addEventListener('click', () => { intro.classList.add('is-hidden'); });
 
   STORES = await loadStores();
+  applySavedStatuses(STORES);
   renderSidebar();
 
   document.getElementById('dash-main').addEventListener('click', (e) => {
@@ -1303,40 +1501,8 @@ async function boot() {
       return;
     }
 
-    const chip = e.target.closest('.filter-chip[data-filter]');
-    if (chip) {
-      chip.parentElement.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      applyReceiptFilter(chip.dataset.filter);
-      return;
-    }
-
     const receiptBtn = e.target.closest('.receipt__btn[data-receipt-action]');
-    if (receiptBtn) {
-      receiptBtn.classList.toggle('is-done');
-      const card = receiptBtn.closest('.receipt');
-      const statusEl = card.querySelector('.receipt__foot .status');
-      if (receiptBtn.dataset.receiptAction === 'ready' && receiptBtn.classList.contains('is-done')) {
-        statusEl.textContent = 'Ready'; statusEl.className = 'status status--ok';
-      } else if (receiptBtn.dataset.receiptAction === 'shipped' && receiptBtn.classList.contains('is-done')) {
-        statusEl.textContent = 'Handed off'; statusEl.className = 'status status--ok';
-      }
-      card.classList.remove('receipt--pulse');
-      void card.offsetWidth; // restart the animation even if clicked twice in a row
-      card.classList.add('receipt--pulse');
-      return;
-    }
-
-    const flowNode = e.target.closest('.data-flow__node[data-flow-action]');
-    if (flowNode) {
-      const action = flowNode.dataset.flowAction;
-      if (action === 'printers') { location.hash = `#store-${CURRENT.id}/printers`; return; }
-      if (action === 'overview') { location.hash = `#store-${CURRENT.id}`; return; }
-      const store = STORES.find(s => s.id === CURRENT.id);
-      if (action === 'channel') { openDrill(drillStoreChannelsContent(store), e); return; }
-      if (action === 'dish') { openDrill(drillStoreDishes(store), e); return; }
-      return;
-    }
+    if (receiptBtn) { handleReceiptAction(receiptBtn); return; }
 
     const switcherBtn = e.target.closest('#store-switcher-btn');
     if (switcherBtn) {
@@ -1354,12 +1520,6 @@ async function boot() {
   });
 
   document.getElementById('dash-main').addEventListener('change', (e) => {
-    const sel = e.target.closest('#order-day-select');
-    if (sel && CURRENT.name === 'store') {
-      const store = STORES.find(s => s.id === CURRENT.id);
-      renderOrdersReceipts(store, sel.value);
-      return;
-    }
     const dbSel = e.target.closest('#db-store-select');
     if (dbSel) {
       dbStoreFilter = dbSel.value;
@@ -1406,7 +1566,16 @@ async function boot() {
   document.getElementById('tour-skip').addEventListener('click', endTour);
 
   window.addEventListener('hashchange', router);
-  window.addEventListener('resize', () => router());
+  // re-render on resize (charts size to their box), then re-aim the tour if
+  // it's open, so the card is never left pointing at where things used to be
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      router();
+      if (tourIsOpen()) showTourStep(tourIndex);
+    }, 150);
+  });
   if (!location.hash) location.hash = '#overview';
   router();
 }

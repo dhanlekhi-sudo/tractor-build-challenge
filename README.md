@@ -14,7 +14,7 @@ drill) a **"View the orders behind this"** toggle showing the actual
 order-book rows that number is built from. One order-book rollup across all
 stores, a dashboard per store (switch with the dropdown in the header or the
 sidebar), a ranked store leaderboard, foot traffic, a top-5 trending-dish
-leaderboard, a guided tour (click **Take the tour** in the sidebar), and — per
+leaderboard, a guided tour (click **Take the tour** in the sidebar — it includes an animated demo of an order coming in and being marked Ready or Cancelled), and — per
 store — a **Printers** tab: printer status (including a jammed state that
 reroutes the print queue) and a kitchen-screen preview of the actual order
 tickets. All of it computed live from the order-book data files, nothing
@@ -65,11 +65,13 @@ Steady store. Ticket time and on-time rate both sit at or above the network medi
 - **`printers`** drives that store's **Printers** tab — one card per printer, `status: jammed` shows a jam warning and reroutes that printer's share of the print queue and the kitchen-screen ticket preview to the other printer.
 - **`top_dishes`** is a *summary* — see below, it's generated from the Excel file, not typed independently.
 - The line of text after the closing `---` is the store's note — it shows as the highlighted callout at the top of that store's Overview tab, and a store is marked **Flagged** in every list if that note starts with the word "Flagged."
-- A store's id (`"01"`) must match its filename (`store-01.md`) and is what the URL hash and nav use (`#store-01`, `#store-01/orders`).
+- A store's id (`"01"`) must match its filename (`store-01.md`) and is what the URL hash and nav use (`#store-01`, `#store-01/restaurant`; old `#store-01/orders` links still open it).
 
 **`data/orders/store-0X.xlsx`** — real Excel files, the *actual* order book:
 
-One row per order, every day of the month — `order_no, date, time, source, dish, total, status`. These are genuine `.xlsx` files (openable in Excel/Numbers/Google Sheets), read in the browser with [SheetJS](https://sheetjs.com/). This is the source of truth for anything order-level: the **Orders** tab (receipts, grouped white-on-top/blue-below by in-store vs. delivery, with a day picker and channel filter), the **Printers** tab's kitchen-screen ticket preview, and every drill-down's **"View the orders behind this"** panel. The "Where this table feeds" diagram at the bottom of each store's Orders tab shows exactly which parts of the dashboard a given file powers.
+One row per order, every day of the month — `order_no, date, time, source, dish, total, status`. These are genuine `.xlsx` files (openable in Excel/Numbers/Google Sheets), read in the browser with [SheetJS](https://sheetjs.com/). This is the source of truth for anything order-level: the **In-restaurant** tab (today's receipts — open orders on top, each with **Ready** and **Cancel** buttons, finished ones below under "Done today", with new orders arriving live), the **Printers** tab's kitchen-screen ticket preview, and every drill-down's **"View the orders behind this"** panel.
+
+Ready / Cancel write the new status into the in-page order book — the same rows the **Database** page and every drill-down read — and save it in the browser's `localStorage` (`tractor.orderStatus.v1`), so it survives a refresh on that computer. The Excel files themselves never change; there's no server. Clear site data to reset.
 
 They're generated, not hand-typed — **`scripts/generate_orders.py`** (needs `openpyxl`: `pip install openpyxl`) builds a full day-by-day book per store, with each day's channel counts summing back to that store's `months` entry in the `.md` file exactly, so the two files always reconcile. Run it after changing a store's channel totals:
 
@@ -84,12 +86,12 @@ To add a **fifth store**: copy a block in `scripts/generate_orders.py`'s `STORES
 ## How the dashboard is built
 
 - **`index.html` / `dashboard.css` / `dashboard.js`** — the whole app (the HTML file keeps the name `index.html` so it serves at the site root; everything in it is the dashboard). `dashboard.css` imports `style.css` for the shared brand tokens (colors, type). `dashboard.html` is kept only as a redirect, in case that URL was shared anywhere before the site became a single page.
-- Routing is a plain hash router (`#overview`, `#database`, `#database/stores`, `#store-01`, `#store-01/orders`) — shareable, bookmarkable, no framework.
+- Routing is a plain hash router (`#overview`, `#database`, `#database/stores`, `#store-01`, `#store-01/restaurant`) — shareable, bookmarkable, no framework.
 - **Database** (sidebar, next to Overview) is a raw table browser across all four stores at once — Orders (paginated, 50/page, with a store dropdown and the same channel chips), Stores, Printers, and Dishes. It reads the exact same `STORES`/`allOrdersWithStore()` data every other page does; nothing here is a separate copy.
 - Every KPI tile and every ranked-bar row is clickable and opens the drill-down overlay (`openDrill` / `pushDrill` in `dashboard.js`) — the same overlay supports multiple levels deep, with a "← Back" to step up one level, and an `afterRender` hook so a drill can draw its own chart once its markup is in the DOM.
-- `sourceOrdersHTML()` appends a collapsible "View the orders behind this" table to a drill, built from the same Excel-derived `store.orders` the Orders tab uses (`ordersForStore`/`ordersForChannel`/`ordersForDish` filter it) — the point is that nothing on this dashboard is a number with no receipt behind it.
+- `sourceOrdersHTML()` appends a collapsible "View the orders behind this" table to a drill, built from the same Excel-derived `store.orders` the In-restaurant tab uses (`ordersForStore`/`ordersForChannel`/`ordersForDish` filter it) — the point is that nothing on this dashboard is a number with no receipt behind it.
 - Channel colors (`--ch-doordash`, `--ch-ubereats`, `--ch-instore`, `--ch-website` in `style.css`) are a validated color-blind-safe set — see the `dataviz` skill's `scripts/validate_palette.js` if you ever change them; re-validate before shipping a new set. `drawStackedBarChart` reuses them for the "channel mix over time" chart inside the Online Share / Channel Mix drills.
-- The guided tour (`TOUR_STEPS` in `dashboard.js`) is a plain array of `{selector, title, text}` — add a step by adding an entry; it'll scroll to and spotlight whatever element the selector matches.
+- The guided tour (`TOUR_STEPS` in `dashboard.js`) is a plain array of `{selector, title, text}` — add a step by adding an entry; it'll scroll to and spotlight whatever element the selector matches. A step can also take `route` (a function returning the hash to open first) and `demo: true` (plays the pretend-order Ready / Cancel animation — DOM-only, it never saves). The tour card is measured and placed fully inside the window every step, and fades while it moves, so it's never cut off.
 
 ## Deploying
 
