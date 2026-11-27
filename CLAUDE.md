@@ -12,7 +12,13 @@ redirect stub to `./`, for any link shared before the merge.
 ## Stack
 - Plain HTML / CSS / vanilla JS. No framework, no build step, on purpose —
   don't introduce one.
-- `js-yaml` (CDN) parses the YAML frontmatter in `data/store-*.md`.
+- `js-yaml` (CDN) parses the YAML frontmatter in `data/store-*.md`; SheetJS
+  reads `data/orders/*.xlsx`. Both are pinned in `index.html` with
+  `integrity` hashes — js-yaml 4.3.2 from cdnjs, SheetJS 0.20.3 from
+  `cdn.sheetjs.com` (npm/cdnjs stop at 0.18.5, which has known advisories).
+  Changing a version means recomputing its hash
+  (`curl -s URL | openssl dgst -sha384 -binary | base64`), or the browser
+  refuses to run it.
 - Hosting: GitHub Pages (`main` branch, root). `.nojekyll` is required — Jekyll
   would otherwise try to render `data/*.md` as pages and break the dashboard's
   raw `fetch()` of them.

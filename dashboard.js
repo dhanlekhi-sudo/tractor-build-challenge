@@ -736,10 +736,16 @@ function todaysOrders(store) {
    in this browser's localStorage so they survive a refresh. There is no
    server: the Excel files themselves never change. */
 const STATUS_STORE_KEY = 'tractor.orderStatus.v1';
+// The only values the buttons ever save. Anything else found in storage was
+// edited by hand and is ignored, because statuses end up in the page's HTML.
+const SAVEABLE_STATUSES = ['Ready', 'Cancelled'];
 function statusKey(storeId, orderNo) { return `${storeId}:${orderNo}`; }
 
 function readSavedStatuses() {
-  try { return JSON.parse(localStorage.getItem(STATUS_STORE_KEY)) || {}; } catch { return {}; }
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STATUS_STORE_KEY));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
 }
 function writeSavedStatuses(map) {
   try { localStorage.setItem(STATUS_STORE_KEY, JSON.stringify(map)); } catch { /* storage blocked — the in-page order book still has the change */ }
@@ -750,12 +756,13 @@ function applySavedStatuses(stores) {
   const kept = {};
   stores.forEach(s => s.orders.forEach(o => {
     const key = statusKey(s.id, o.order_no);
-    if (saved[key]) { o.status = saved[key]; kept[key] = saved[key]; }
+    if (SAVEABLE_STATUSES.includes(saved[key])) { o.status = saved[key]; kept[key] = saved[key]; }
   }));
   writeSavedStatuses(kept); // drops entries for simulated orders that no longer exist
 }
 
 function saveOrderStatus(store, orderNo, status) {
+  if (!SAVEABLE_STATUSES.includes(status)) return null;
   const order = store.orders.find(o => o.order_no === orderNo);
   if (!order) return null;
   order.status = status;
