@@ -1475,7 +1475,8 @@ async function boot() {
     await portalReady;
     startTour();
   });
-  document.getElementById('intro-skip').addEventListener('click', () => { intro.classList.add('is-hidden'); });
+  // optional: a page cached from before the skip link existed must still boot
+  document.getElementById('intro-skip')?.addEventListener('click', () => { intro.classList.add('is-hidden'); });
 
   STORES = await loadStores();
   applySavedStatuses(STORES);

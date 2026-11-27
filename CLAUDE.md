@@ -34,7 +34,13 @@ redirect stub to `./`, for any link shared before the merge.
 3. Never push to `main` (= production, since GitHub Pages serves it directly)
    without the fix or feature having been verified in a browser first —
    `main` is live the moment it's pushed, there is no staging.
-4. After any change to `data/store-*.md`'s shape (new fields, renamed keys):
+4. Any change to `dashboard.js`, `dashboard.css` or `style.css` must bump
+   the `?v=` stamp everywhere it appears (two places in `index.html`, the
+   `@import` in `dashboard.css`). GitHub Pages lets browsers cache every
+   file for 10 minutes; without a new stamp a refreshed page can run with
+   the previous script — e.g. a "Take the tutorial" button that only closes
+   the popup.
+5. After any change to `data/store-*.md`'s shape (new fields, renamed keys):
    update all four files together and re-check both the Overview rollup and
    at least one store page — the overview sums across stores assuming they
    share the same `months[].label` sequence.
